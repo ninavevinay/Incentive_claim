@@ -1,0 +1,68 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..700&family=Sora:wght@300;400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "Sora", system-ui, sans-serif;
+  color-scheme: light;
+  --ink: #0f1221;
+  --sun: #ffb454;
+  --mint: #3dd6a8;
+  --coral: #ff7a8a;
+  --sky: #7cc4ff;
+  --paper: #f6f3ee;
+}
+
+body {
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 800px at 10% -10%, rgba(255, 180, 84, 0.35), transparent 55%),
+    radial-gradient(1000px 800px at 110% 10%, rgba(124, 196, 255, 0.35), transparent 55%),
+    radial-gradient(900px 700px at 50% 120%, rgba(61, 214, 168, 0.25), transparent 55%),
+    linear-gradient(180deg, #fbfaf8 0%, #f3ede4 55%, #f1e8dc 100%);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.font-display {
+  font-family: "Fraunces", serif;
+}
+
+.card {
+  @apply bg-white/75 backdrop-blur-xl border border-black/10 rounded-3xl shadow-[0_20px_60px_rgba(15,18,33,0.12)];
+}
+
+.panel {
+  @apply bg-white/60 backdrop-blur-xl border border-black/10 rounded-2xl;
+}
+
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition sm:px-5;
+  touch-action: manipulation;
+}
+
+.btn-primary {
+  @apply bg-black text-white hover:bg-black/90 shadow-[0_12px_30px_rgba(15,18,33,0.25)];
+}
+
+.btn-ghost {
+  @apply border border-black/15 bg-white/60 hover:bg-white;
+}
+
+.btn-soft {
+  @apply bg-white/70 border border-black/10 hover:border-black/20;
+}
+
+.input {
+  @apply w-full rounded-2xl border border-black/10 bg-white/85 px-4 py-3 text-sm shadow-[0_6px_20px_rgba(15,18,33,0.08)] focus:outline-none focus:ring-2 focus:ring-black/20;
+}
+
+.badge {
+  @apply inline-flex items-center rounded-full bg-black/90 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white;
+}
+
+.muted {
+  @apply text-black/60;
+}

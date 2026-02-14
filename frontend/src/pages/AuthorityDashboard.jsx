@@ -1,0 +1,675 @@
+import { useEffect, useState } from "react";
+import Sidebar from "../components/Sidebar.jsx";
+import Topbar from "../components/Topbar.jsx";
+import { api } from "../lib/api.js";
+import { useAuth, logout } from "../lib/auth.jsx";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+const menu = [
+  "Dashboard",
+  "Pending Applications",
+  "My Approved Applications",
+  "My Rejected Applications",
+  "Total Applications",
+  "Profile",
+  "Logout"
+];
+
+const ROLE_LABELS = {
+  department_coordinator: "Department Coordinator",
+  department_hod: "Department HOD",
+  institution_coordinator: "Institution Coordinator"
+};
+
+export default function AuthorityDashboard() {
+  const { user, setUser } = useAuth();
+  const [active, setActive] = useState(menu[0]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [apps, setApps] = useState([]);
+  const [allApps, setAllApps] = useState([]);
+  const [myApprovedApps, setMyApprovedApps] = useState([]);
+  const [myRejectedApps, setMyRejectedApps] = useState([]);
+  const [message, setMessage] = useState("");
+  const [editingDepartment, setEditingDepartment] = useState(false);
+  const [departmentDraft, setDepartmentDraft] = useState("");
+  const [rejectRemarks, setRejectRemarks] = useState({});
+  const [approveAmounts, setApproveAmounts] = useState({});
+
+  const scopedDepartment = user?.role === "institution_coordinator" ? "" : (user?.department || "");
+  const fetchPending = async () => api.pendingApplications(scopedDepartment);
+  const fetchAll = async () => api.allApplications(scopedDepartment);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchPending().then(setApps).catch(() => setApps([]));
+    fetchAll().then(setAllApps).catch(() => setAllApps([]));
+    api.myReviewedApplications("approve").then(setMyApprovedApps).catch(() => setMyApprovedApps([]));
+    api.myReviewedApplications("reject").then(setMyRejectedApps).catch(() => setMyRejectedApps([]));
+    const interval = setInterval(() => {
+      fetchPending().then(setApps).catch(() => setApps([]));
+      fetchAll().then(setAllApps).catch(() => setAllApps([]));
+      api.myReviewedApplications("approve").then(setMyApprovedApps).catch(() => setMyApprovedApps([]));
+      api.myReviewedApplications("reject").then(setMyRejectedApps).catch(() => setMyRejectedApps([]));
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  useEffect(() => {
+    setDepartmentDraft(user?.department || "");
+  }, [user]);
+
+  const refresh = async () => {
+    setApps(await fetchPending().catch(() => []));
+    setAllApps(await fetchAll().catch(() => []));
+    setMyApprovedApps(await api.myReviewedApplications("approve").catch(() => []));
+    setMyRejectedApps(await api.myReviewedApplications("reject").catch(() => []));
+  };
+
+  const normalize = (value) => (value || "").trim().toLowerCase();
+  const scopedAllApps = user?.role === "institution_coordinator"
+    ? allApps
+    : allApps.filter((app) => normalize(app.data?.department) === normalize(user?.department));
+
+  const localApprovedByMeApps = scopedAllApps.filter((app) => {
+    const reviews = app.data?.reviews || [];
+    const strictMatch = reviews.some(
+      (review) =>
+        review?.action === "approve" &&
+        review?.reviewer_id !== undefined &&
+        review?.reviewer_id !== null &&
+        String(review.reviewer_id) === String(user?.id)
+    );
+    if (strictMatch) return true;
+    return reviews.some(
+      (review) =>
+        review?.action === "approve" &&
+        review?.role === user?.role &&
+        (review?.reviewer_id === undefined || review?.reviewer_id === null)
+    );
+  });
+
+  const localRejectedByMeApps = scopedAllApps.filter((app) => {
+    const reviews = app.data?.reviews || [];
+    const data = app.data || {};
+    const strictMatch = reviews.some(
+      (review) =>
+        review?.action === "reject" &&
+        review?.reviewer_id !== undefined &&
+        review?.reviewer_id !== null &&
+        String(review.reviewer_id) === String(user?.id)
+    );
+    if (strictMatch) return true;
+    return reviews.some(
+      (review) =>
+        review?.action === "reject" &&
+        review?.role === user?.role &&
+        (review?.reviewer_id === undefined || review?.reviewer_id === null)
+    ) || (app.status === "rejected" && data?.last_reject_role === user?.role);
+  });
+
+  const mergeById = (primary, fallback) => {
+    const map = new Map();
+    [...primary, ...fallback].forEach((app) => {
+      if (app && app.id !== undefined && app.id !== null) {
+        map.set(app.id, app);
+      }
+    });
+    return Array.from(map.values());
+  };
+
+  const approvedByMeApps = mergeById(myApprovedApps, localApprovedByMeApps);
+  const rejectedByMeApps = mergeById(myRejectedApps, localRejectedByMeApps);
+
+  const review = async (id, action) => {
+    setMessage("");
+    try {
+      const remark = action === "reject" ? (rejectRemarks[id] || "").trim() : null;
+      const approvedAmountRaw = approveAmounts[id];
+      const approvedAmount = approvedAmountRaw !== undefined && approvedAmountRaw !== ""
+        ? Number(approvedAmountRaw)
+        : null;
+      if (action === "reject" && !remark) {
+        setMessage("Rejection remark is required.");
+        return;
+      }
+      if (action === "approve" && user?.role === "institution_coordinator") {
+        if (approvedAmount === null || Number.isNaN(approvedAmount) || approvedAmount < 0) {
+          setMessage("Approved amount is required for institution coordinator.");
+          return;
+        }
+      }
+      await api.reviewApplication(id, action, remark, approvedAmount);
+      setRejectRemarks((prev) => ({ ...prev, [id]: "" }));
+      setApproveAmounts((prev) => ({ ...prev, [id]: "" }));
+      setMessage(`Application ${action}d.`);
+      await refresh();
+    } catch (err) {
+      setMessage(err.message);
+    }
+  };
+
+  const exportApprovedApplicationsPdf = () => {
+    const approvedRows = approvedByMeApps.filter((app) => app.status === "approved");
+    const escapeHtml = (value) =>
+      String(value ?? "-")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+    const studentRowsHtml = approvedRows
+      .filter((app) => app.application_type === "student")
+      .map((app) => {
+        const data = app.data || {};
+        const name = data.applicant_name || data.application_name || "-";
+        const email = data.email || "-";
+        const department = data.department || "-";
+        const status = app.status || "-";
+        const amount = data.approved_amount ?? "-";
+        const approvedAt = data.approved_at || "-";
+        const bankAccount = data.bank_account_number || "-";
+        const bankIfsc = data.bank_ifsc || "-";
+        const bankBranch = data.bank_branch || "-";
+        const bankName = data.bank_name || "-";
+        return `<tr>
+          <td>${escapeHtml(app.id)}</td>
+          <td>${escapeHtml(name)}</td>
+          <td>${escapeHtml(email)}</td>
+          <td>${escapeHtml(department)}</td>
+          <td>${escapeHtml(status)}</td>
+          <td>${escapeHtml(amount)}</td>
+          <td>${escapeHtml(bankAccount)}</td>
+          <td>${escapeHtml(bankIfsc)}</td>
+          <td>${escapeHtml(bankBranch)}</td>
+          <td>${escapeHtml(bankName)}</td>
+          <td>${escapeHtml(approvedAt)}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const facultyRowsHtml = approvedRows
+      .filter((app) => app.application_type === "faculty")
+      .map((app) => {
+        const data = app.data || {};
+        const name = data.applicant_name || data.application_name || "-";
+        const email = data.email || "-";
+        const department = data.department || "-";
+        const status = app.status || "-";
+        const amount = data.approved_amount ?? "-";
+        const approvedAt = data.approved_at || "-";
+        return `<tr>
+          <td>${escapeHtml(app.id)}</td>
+          <td>${escapeHtml(name)}</td>
+          <td>${escapeHtml(email)}</td>
+          <td>${escapeHtml(department)}</td>
+          <td>${escapeHtml(status)}</td>
+          <td>${escapeHtml(amount)}</td>
+          <td>${escapeHtml(approvedAt)}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Approved Applications Report</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 24px; }
+      h1 { margin-bottom: 4px; }
+      p { color: #444; margin-top: 0; }
+      table { width: 100%; border-collapse: collapse; margin-top: 12px; margin-bottom: 18px; }
+      th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+      th { background: #f3f3f3; }
+      h2 { margin-top: 18px; margin-bottom: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>Approved Applications Report</h1>
+    <p>Institution Coordinator - ${new Date().toLocaleString()}</p>
+    <h2>Student Applications</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Application ID</th>
+          <th>Applicant</th>
+          <th>Email</th>
+          <th>Department</th>
+          <th>Status</th>
+          <th>Approved Amount</th>
+          <th>Bank Account</th>
+          <th>IFSC</th>
+          <th>Branch</th>
+          <th>Bank Name</th>
+          <th>Approved At</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${studentRowsHtml || '<tr><td colspan="10">No approved student applications.</td></tr>'}
+      </tbody>
+    </table>
+    <h2>Faculty Applications</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Application ID</th>
+          <th>Applicant</th>
+          <th>Email</th>
+          <th>Department</th>
+          <th>Status</th>
+          <th>Approved Amount</th>
+          <th>Approved At</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${facultyRowsHtml || '<tr><td colspan="7">No approved faculty applications.</td></tr>'}
+      </tbody>
+    </table>
+  </body>
+</html>`;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
+
+  const saveDepartment = async () => {
+    const updated = await api.updateProfile({ department: departmentDraft });
+    setUser(updated);
+    setEditingDepartment(false);
+  };
+
+  const handleSelect = (item) => {
+    if (item === "Logout") {
+      logout(setUser);
+      return;
+    }
+    setActive(item);
+  };
+
+  const docLink = (path) => {
+    if (!path) return "-";
+    const href = path.startsWith("http") ? path : `${API_URL}${path}`;
+    return (
+      <a className="text-black underline" href={href} target="_blank" rel="noreferrer">
+        View
+      </a>
+    );
+  };
+
+  return (
+    <div className="min-h-screen px-3 py-4 sm:px-4 sm:py-6 md:px-8 md:py-8 lg:h-screen lg:overflow-hidden lg:px-10">
+      <div className="mb-4 flex items-center justify-between lg:hidden">
+        <div>
+          <div className="text-xs uppercase tracking-[0.3em] text-black/40">Engineering</div>
+          <div className="text-lg font-semibold font-display">Incentive Portal</div>
+        </div>
+        <button
+          className="btn btn-ghost"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Open menu"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+          Menu
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:h-[calc(100vh-4rem)] lg:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="hidden lg:sticky lg:top-0 lg:block lg:h-full">
+          <Sidebar items={menu} active={active} onSelect={handleSelect} />
+        </div>
+        <div className="card h-full min-h-0 overflow-y-auto p-6 md:p-8">
+          <Topbar title={`Authority Dashboard`} subtitle={`Hello ${user?.name || ""}`} />
+          {active === "Dashboard" && (
+            <div className="mt-6">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="panel p-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-black/40">Pending</div>
+                  <div className="mt-3 text-2xl font-semibold">{apps.length}</div>
+                  <div className="muted text-xs">Awaiting your action</div>
+                </div>
+                <div className="panel p-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-black/40">Total Applications</div>
+                  <div className="mt-3 text-2xl font-semibold">{scopedAllApps.length}</div>
+                  <div className="muted text-xs">In your scope</div>
+                </div>
+                <div className="panel p-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-black/40">Role</div>
+                  <div className="mt-3 text-lg font-semibold">{ROLE_LABELS[user?.role] || user?.role}</div>
+                  <div className="muted text-xs">Active profile</div>
+                </div>
+                <div className="panel p-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-black/40">Department</div>
+                  <div className="mt-3 text-lg font-semibold">{user?.department || "-"}</div>
+                  <div className="muted text-xs">Assigned unit</div>
+                </div>
+              </div>
+
+              <div className="mt-6 panel p-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.2em] text-black/40">Overview</div>
+                    <h3 className="mt-2 text-lg font-semibold font-display">Applications Summary</h3>
+                  </div>
+                  <div className="text-xs text-black/50">Live counts</div>
+                </div>
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  {[
+                    { label: "Pending", value: apps.length },
+                    { label: "Total", value: scopedAllApps.length },
+                    { label: "My Approved", value: approvedByMeApps.length },
+                    { label: "My Rejected", value: rejectedByMeApps.length }
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-2xl border border-black/10 bg-white/70 p-4">
+                      <div className="flex items-center justify-between text-sm font-semibold">
+                        <span>{item.label}</span>
+                        <span>{item.value}</span>
+                      </div>
+                      <div className="mt-3 h-2 w-full rounded-full bg-black/10">
+                        <div
+                          className="h-2 rounded-full bg-black/80"
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              Math.round(
+                                (item.value / Math.max(scopedAllApps.length, 1)) * 100
+                              )
+                            )}%`
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {active === "Pending Applications" && (
+            <div className="mt-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold font-display">Pending Applications</h2>
+                <button className="btn btn-ghost" type="button" onClick={refresh}>Refresh</button>
+              </div>
+              {message && <div className="mt-3 text-sm text-emerald-700">{message}</div>}
+              <div className="mt-4 grid gap-4">
+                {apps.map((app) => (
+                  <div key={app.id} className="panel p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="font-semibold">{app.data.applicant_name || app.data.application_name || "-"}</div>
+                      <span className="badge">{app.status}</span>
+                    </div>
+                    <div className="muted mt-2 text-xs">ID: {app.id}</div>
+                    <div className="mt-4 grid gap-3 text-sm text-black/70 md:grid-cols-2">
+                      <div><span className="text-black/50">Applicant Name:</span> {app.data.applicant_name || app.data.application_name || "-"}</div>
+                      <div><span className="text-black/50">Department:</span> {app.data.department || "-"}</div>
+                      <div><span className="text-black/50">USN:</span> {app.data.usn || "-"}</div>
+                      <div><span className="text-black/50">Email:</span> {app.data.email || "-"}</div>
+                      <div><span className="text-black/50">Mobile:</span> {app.data.mobile_number || "-"}</div>
+                      <div><span className="text-black/50">Designation:</span> {app.data.designation || "-"}</div>
+                      <div><span className="text-black/50">Semester:</span> {app.data.semester || "-"}</div>
+                      <div><span className="text-black/50">Academic Year:</span> {app.data.academic_year || "-"}</div>
+                      <div><span className="text-black/50">Claims:</span> {app.data.incentive_claim_count ?? "-"}</div>
+                      <div><span className="text-black/50">Course:</span> {app.data.course_title || "-"}</div>
+                      <div><span className="text-black/50">Platform:</span> {app.data.course_platform || "-"}</div>
+                      <div><span className="text-black/50">Session:</span> {app.data.course_session || "-"}</div>
+                      <div><span className="text-black/50">Weeks:</span> {app.data.course_weeks ?? "-"}</div>
+                      <div><span className="text-black/50">Score:</span> {app.data.course_score || "-"}</div>
+                      <div><span className="text-black/50">Category:</span> {app.data.course_category || "-"}</div>
+                      <div><span className="text-black/50">Credits:</span> {app.data.course_credits ?? "-"}</div>
+                      <div><span className="text-black/50">Fee Paid:</span> {app.data.registration_fee_paid ?? "-"}</div>
+                      <div><span className="text-black/50">Permissible Claim:</span> {app.data.permissible_claim ?? "-"}</div>
+                      <div><span className="text-black/50">Fee Receipt:</span> {docLink(app.data.fee_receipt_file)}</div>
+                      <div><span className="text-black/50">Certificate:</span> {docLink(app.data.certificate_file)}</div>
+                      <div><span className="text-black/50">Bank Passbook:</span> {docLink(app.data.bank_passbook_file)}</div>
+                      <div><span className="text-black/50">Signature:</span> {docLink(app.data.signature_file)}</div>
+                    </div>
+                    <div className="mt-4">
+                      <label className="text-xs uppercase tracking-[0.2em] text-black/40">Rejection Remark (required)</label>
+                      <textarea
+                        className="input mt-2 h-24"
+                        value={rejectRemarks[app.id] || ""}
+                        onChange={(e) => setRejectRemarks((prev) => ({ ...prev, [app.id]: e.target.value }))}
+                      />
+                    </div>
+                    {user?.role === "institution_coordinator" && (
+                      <div className="mt-4">
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Approved Amount (Rs)</label>
+                        <input
+                          className="input mt-2"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={approveAmounts[app.id] || ""}
+                          onChange={(e) => setApproveAmounts((prev) => ({ ...prev, [app.id]: e.target.value }))}
+                        />
+                      </div>
+                    )}
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button className="btn btn-primary" type="button" onClick={() => review(app.id, "approve")}>Approve</button>
+                      <button className="btn btn-ghost" type="button" onClick={() => review(app.id, "reject")}>Reject</button>
+                    </div>
+                  </div>
+                ))}
+                {apps.length === 0 && (
+                  <div className="muted text-sm">No pending applications.</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {active === "My Approved Applications" && (
+            <div className="mt-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold font-display">My Approved Applications</h2>
+                {user?.role === "institution_coordinator" && (
+                  <button className="btn btn-ghost" type="button" onClick={exportApprovedApplicationsPdf}>
+                    Export PDF
+                  </button>
+                )}
+              </div>
+              <div className="mt-4 grid gap-4">
+                {approvedByMeApps.map((app) => (
+                  <div key={app.id} className="panel p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="font-semibold">{app.data.applicant_name || app.data.application_name || "-"}</div>
+                      <span className="badge">{app.status}</span>
+                    </div>
+                    <div className="muted mt-2 text-xs">ID: {app.id}</div>
+                    <div className="mt-3 text-sm text-black/70">
+                      <span className="text-black/50">Department:</span> {app.data.department || "-"}
+                    </div>
+                    {user?.role === "institution_coordinator" && (
+                      <div className="mt-2 text-sm text-black/70">
+                        <span className="text-black/50">Approved Amount:</span> {app.data?.approved_amount ?? "-"}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {approvedByMeApps.length === 0 && (
+                  <div className="muted text-sm">No applications found with your approval record.</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {active === "My Rejected Applications" && (
+            <div className="mt-8">
+              <h2 className="text-xl font-semibold font-display">My Rejected Applications</h2>
+              <div className="mt-4 grid gap-4">
+                {rejectedByMeApps.map((app) => {
+                  const reviews = app.data?.reviews || [];
+                  const myReject =
+                    reviews
+                      .filter(
+                        (r) =>
+                          r.action === "reject" &&
+                          r.reviewer_id !== undefined &&
+                          r.reviewer_id !== null &&
+                          String(r.reviewer_id) === String(user?.id)
+                      )
+                      .slice(-1)[0] ||
+                    reviews
+                      .filter(
+                        (r) =>
+                          r.action === "reject" &&
+                          r.role === user?.role &&
+                          (r.reviewer_id === undefined || r.reviewer_id === null)
+                      )
+                      .slice(-1)[0];
+                  const remark = myReject?.remark || app.data?.last_reject_remark || "-";
+                  return (
+                    <div key={app.id} className="panel p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="font-semibold">{app.data.applicant_name || app.data.application_name || "-"}</div>
+                        <span className="badge">{app.status}</span>
+                      </div>
+                      <div className="muted mt-2 text-xs">ID: {app.id}</div>
+                      <div className="mt-3 text-sm text-black/70">
+                        <span className="text-black/50">Department:</span> {app.data.department || "-"}
+                      </div>
+                      <div className="mt-3 text-sm text-black/70">
+                        <span className="text-black/50">Remark:</span> {remark}
+                      </div>
+                    </div>
+                  );
+                })}
+                {rejectedByMeApps.length === 0 && (
+                  <div className="muted text-sm">No applications found with your rejection record.</div>
+                )}
+              </div>
+            </div>
+          )}
+
+
+          {active === "Total Applications" && (
+            <div className="mt-8">
+              <h2 className="text-xl font-semibold font-display">Total Applications</h2>
+              <div className="mt-4 grid gap-4">
+                {scopedAllApps.map((app) => (
+                  <div key={app.id} className="panel p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="font-semibold">{app.data.applicant_name || app.data.application_name || "-"}</div>
+                      <span className="badge">{app.status}</span>
+                    </div>
+                    <div className="muted mt-2 text-xs">ID: {app.id}</div>
+                    <div className="mt-3 text-sm text-black/70">
+                      <span className="text-black/50">Department:</span> {app.data.department || "-"}
+                    </div>
+                  </div>
+                ))}
+                {scopedAllApps.length === 0 && (
+                  <div className="muted text-sm">No applications.</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {active === "Profile" && (
+            <div className="mt-8">
+              <h2 className="text-xl font-semibold font-display">Profile</h2>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div className="panel p-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-black/40">Name</div>
+                  <div className="mt-2 text-lg font-semibold">{user?.name}</div>
+                </div>
+                <div className="panel p-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-black/40">Email</div>
+                  <div className="mt-2 text-sm">{user?.email}</div>
+                </div>
+                <div className="panel p-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-black/40">Role</div>
+                  <div className="mt-2 text-sm">{ROLE_LABELS[user?.role] || user?.role}</div>
+                </div>
+                <div className="panel p-4">
+                  <div className="text-xs uppercase tracking-[0.2em] text-black/40">Department</div>
+                  {editingDepartment ? (
+                    <div className="mt-2 space-y-2">
+                      <select
+                        className="input"
+                        value={departmentDraft}
+                        onChange={(e) => setDepartmentDraft(e.target.value)}
+                      >
+                        <option value="" disabled>Select department</option>
+                        <option value="First Year">First Year</option>
+                        <option value="CSE">CSE</option>
+                        <option value="AIML">AIML</option>
+                        <option value="AIDS">AIDS</option>
+                        <option value="ETC">ETC</option>
+                        <option value="IT">IT</option>
+                        <option value="EE">EE</option>
+                        <option value="ME">ME</option>
+                        <option value="CA (Computer Applications)">CA (Computer Applications)</option>
+                        <option value="BA (Business Administration)">BA (Business Administration)</option>
+                      </select>
+                      <div className="flex flex-wrap gap-2">
+                        <button className="btn btn-primary" type="button" onClick={saveDepartment}>Save</button>
+                        <button
+                          className="btn btn-ghost"
+                          type="button"
+                          onClick={() => {
+                            setDepartmentDraft(user?.department || "");
+                            setEditingDepartment(false);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <div className="text-sm">{user?.department}</div>
+                      <button className="btn btn-ghost" type="button" onClick={() => setEditingDepartment(true)}>
+                        Edit
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {active === "Logout" && (
+            <div className="mt-8">
+              <h2 className="text-xl font-semibold font-display">Logout</h2>
+              <p className="muted mt-2 text-sm">You can sign back in anytime.</p>
+              <button className="btn btn-ghost mt-4" onClick={() => logout(setUser)}>Logout</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
+          <div className="absolute left-4 right-4 top-6">
+            <div className="card p-4">
+              <div className="flex items-center justify-between">
+                <div className="text-lg font-semibold font-display">Menu</div>
+                <button className="btn btn-ghost" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
+                  Close
+                </button>
+              </div>
+              <div className="mt-4">
+                <Sidebar
+                  items={menu}
+                  active={active}
+                  onSelect={(item) => {
+                    handleSelect(item);
+                    setSidebarOpen(false);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
