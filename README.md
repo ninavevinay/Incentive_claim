@@ -83,8 +83,7 @@ Current UI validation limits each file to **150KB**. If you see HTTP `413` error
 
 ## Routes & Roles
 - Student/Faculty registration: `/register`
-- Admin registration: `/register-admin`
-- Authority accounts are created by Admin in the Admin Dashboard.
+
 
 ## Troubleshooting
 - **413 Request Entity Too Large**: Increase proxy limit and/or reduce file size.
