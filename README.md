@@ -1,11 +1,16 @@
 # Incentive Claim Portal
 
-Full‑stack portal for students, faculty, authorities, and admins to submit, review, and manage incentive applications.
+**Private / Internal Project**
+- For college internal use only.
+- Do not share code or data publicly.
+- Store all secrets in `.env` and keep them out of Git.
+
+Full-stack portal for students, faculty, authorities, and admins to submit, review, and manage incentive applications.
 
 **Key Features**
-- Role‑based authentication (student, faculty, authority, admin)
+- Role-based authentication (student, faculty, authority, admin)
 - Student & faculty application submission with document uploads
-- Multi‑level review workflow (department coordinator → HOD → institution coordinator)
+- Multi-level review workflow (department coordinator -> HOD -> institution coordinator)
 - Admin dashboard: users, applications, login events, authority registration, form window
 - Notifications and public notices
 
@@ -73,13 +78,14 @@ npm run dev
 Open: `http://localhost:5173`
 
 ## Production Notes
+- Internal deployment only.
 - Serve frontend `dist/` with Nginx (or any static server).
 - Proxy `/api` and `/uploads` to the FastAPI server.
 - Configure Nginx `client_max_body_size` for uploads.
 - Store secrets in `.env` and keep it out of Git.
 
 ## File Upload Limits
-Current UI validation limits each file to **150KB**. If you see HTTP `413` errors, increase reverse proxy limits or reduce file size.
+Current UI validation limits each file to **150KB**. If you see HTTP `413` errors, increase proxy limits or reduce file size.
 
 ## Routes & Roles
 - Student/Faculty registration: `/register`
