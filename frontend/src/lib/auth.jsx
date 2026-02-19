@@ -74,13 +74,7 @@ export async function handleLogin(payload) {
 }
 
 export async function handleRegister(payload) {
-  const authorityRoles = new Set([
-    "department_coordinator",
-    "department_hod",
-    "institution_coordinator"
-  ]);
-  const registerFn = authorityRoles.has(payload.role) ? api.registerAuthority : api.register;
-  return registerFn(payload);
+  return api.register(payload);
 }
 
 export function logout(setUser) {

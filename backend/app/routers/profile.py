@@ -6,6 +6,10 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.routing import dashboard_path_for_user, slugify_department
 from app.models.user import User
+from app.models.application import Application
+from app.models.login_event import LoginEvent
+from app.models.password_reset import PasswordResetRequest
+from app.models.notification import Notification
 from app.schemas.user import UserUpdate, UserOut
 
 router = APIRouter(prefix="/profile", tags=["profile"])
@@ -51,3 +55,14 @@ def update_me(payload: UserUpdate, db: Session = Depends(get_db), user: User = D
     db.commit()
     db.refresh(user)
     return _to_user_out(user)
+
+
+@router.delete("/me")
+def delete_me(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    db.query(Notification).filter(Notification.user_id == user.id).delete()
+    db.query(LoginEvent).filter(LoginEvent.user_id == user.id).delete()
+    db.query(PasswordResetRequest).filter(PasswordResetRequest.user_id == user.id).delete()
+    db.query(Application).filter(Application.owner_id == user.id).delete()
+    db.delete(user)
+    db.commit()
+    return {"message": "Account deleted"}

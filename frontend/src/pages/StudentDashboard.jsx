@@ -3,6 +3,7 @@ import Sidebar from "../components/Sidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../lib/api.js";
 import { useAuth, logout } from "../lib/auth.jsx";
+import { getApprovedAmount, withNotificationAmounts } from "../lib/amount.js";
 
 const menu = [
   "Application Form",
@@ -10,8 +11,12 @@ const menu = [
   "Application Track",
   "Notifications",
   "Profile",
+  "Delete Account",
   "Logout"
 ];
+const AUTO_REFRESH_MS = 5000;
+const MAX_FILE_BYTES = 150 * 1024;
+const MAX_FILE_LABEL = "150KB";
 
 export default function StudentDashboard() {
   const { user, setUser } = useAuth();
@@ -21,8 +26,11 @@ export default function StudentDashboard() {
   const [notifications, setNotifications] = useState([]);
   const [trackId, setTrackId] = useState("");
   const [trackResult, setTrackResult] = useState(null);
+  const [trackMessage, setTrackMessage] = useState("");
   const [editingDepartment, setEditingDepartment] = useState(false);
   const [departmentDraft, setDepartmentDraft] = useState("");
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteMessage, setDeleteMessage] = useState("");
   const [form, setForm] = useState({
     department: "",
     applicantName: "",
@@ -52,6 +60,7 @@ export default function StudentDashboard() {
     declarationAccepted: false
   });
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState("success");
   const statusLabel = (status) => {
     switch (status) {
       case "pending_department_coordinator":
@@ -76,16 +85,37 @@ export default function StudentDashboard() {
     { key: "approved", label: "Approved" }
   ];
 
+  const refreshData = async () => {
+    const notificationsData = await api.notifications().catch(() => []);
+    const appsData = await api.myApplications().catch(() => []);
+    setNotifications(notificationsData);
+    setApps(withNotificationAmounts(appsData, notificationsData));
+  };
+
   useEffect(() => {
-    api.myApplications().then(setApps).catch(() => setApps([]));
-    api.notifications().then(setNotifications).catch(() => setNotifications([]));
+    refreshData();
+    const interval = setInterval(refreshData, AUTO_REFRESH_MS);
+    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const handleToggle = () => setSidebarOpen((prev) => !prev);
+    window.addEventListener("portal:toggle-dashboard-menu", handleToggle);
+    return () => window.removeEventListener("portal:toggle-dashboard-menu", handleToggle);
+  }, []);
+
+  useEffect(() => {
+    if (active === "My Applications" || active === "Notifications" || active === "Application Track") {
+      refreshData();
+    }
+  }, [active]);
 
   useEffect(() => {
     if (!user) return;
     setForm((prev) => ({
       ...prev,
       department: prev.department || user.department || "",
+      applicantName: prev.applicantName || user.name || "",
       email: prev.email || user.email || ""
     }));
   }, [user]);
@@ -97,14 +127,39 @@ export default function StudentDashboard() {
   const submit = async (e) => {
     e.preventDefault();
     setMessage("");
+    setMessageType("error");
+    const fixedDepartment = user?.department || form.department;
+    const fixedApplicantName = user?.name || form.applicantName;
+    const fixedEmail = user?.email || form.email;
+    const sixMonthsAgoMs = Date.now() - (180 * 24 * 60 * 60 * 1000);
+    const recentStudentCount = apps.filter((app) => (
+      app.application_type === "student" &&
+      app.created_at &&
+      new Date(app.created_at).getTime() >= sixMonthsAgoMs
+    )).length;
+    if (recentStudentCount >= 2) {
+      setMessage("Only two student applications are allowed in six months.");
+      return;
+    }
+    const oversizedFiles = [
+      form.feeReceiptFile,
+      form.certificateFile,
+      form.bankPassbookFile,
+      form.signatureFile
+    ].filter((file) => file && file.size > MAX_FILE_BYTES);
+    if (oversizedFiles.length > 0) {
+      const fileNames = oversizedFiles.map((file) => file.name).join(", ");
+      setMessage(`File too large. Max ${MAX_FILE_LABEL} per file. Please compress: ${fileNames}`);
+      return;
+    }
     const data = new FormData();
-    data.append("department", form.department);
-    data.append("applicant_name", form.applicantName);
+    data.append("department", fixedDepartment);
+    data.append("applicant_name", fixedApplicantName);
     data.append("usn", form.usn);
     data.append("mobile_number", form.mobileNumber);
     data.append("academic_year", form.academicYear);
     data.append("semester", form.semester);
-    data.append("email", form.email);
+    data.append("email", fixedEmail);
     data.append("incentive_claim_count", String(form.incentiveClaimCount));
     data.append("course_platform", form.coursePlatform);
     data.append("course_title", form.courseTitle);
@@ -124,49 +179,90 @@ export default function StudentDashboard() {
     if (form.bankPassbookFile) data.append("bank_passbook_file", form.bankPassbookFile);
     if (form.signatureFile) data.append("signature_file", form.signatureFile);
     data.append("declaration_accepted", String(form.declarationAccepted));
-    await api.submitStudent(data);
-    setForm({
-      department: "",
-      applicantName: "",
-      usn: "",
-      mobileNumber: "",
-      academicYear: "",
-      semester: "",
-      email: "",
-      incentiveClaimCount: "00",
-      coursePlatform: "",
-      courseTitle: "",
-      courseSession: "",
-      courseWeeks: "",
-      courseScore: "",
-      courseCategory: "",
-      courseCredits: "",
-      registrationFeePaid: "",
-      permissibleClaim: "",
-      bankAccountNumber: "",
-      bankIfsc: "",
-      bankBranch: "",
-      bankName: "",
-      feeReceiptFile: null,
-      certificateFile: null,
-      bankPassbookFile: null,
-      signatureFile: null,
-      declarationAccepted: false
-    });
-    setMessage("Application submitted.");
-    setApps(await api.myApplications());
+    try {
+      await api.submitStudent(data);
+      setForm({
+        department: user?.department || "",
+        applicantName: user?.name || "",
+        usn: "",
+        mobileNumber: "",
+        academicYear: "",
+        semester: "",
+        email: user?.email || "",
+        incentiveClaimCount: "00",
+        coursePlatform: "",
+        courseTitle: "",
+        courseSession: "",
+        courseWeeks: "",
+        courseScore: "",
+        courseCategory: "",
+        courseCredits: "",
+        registrationFeePaid: "",
+        permissibleClaim: "",
+        bankAccountNumber: "",
+        bankIfsc: "",
+        bankBranch: "",
+        bankName: "",
+        feeReceiptFile: null,
+        certificateFile: null,
+        bankPassbookFile: null,
+        signatureFile: null,
+        declarationAccepted: false
+      });
+      setMessageType("success");
+      setMessage("Application submitted.");
+      setApps(await api.myApplications());
+    } catch (err) {
+      const tooLarge = err?.status === 413 || /file too large/i.test(err?.message || "");
+      setMessageType("error");
+      setMessage(tooLarge ? `File too large. Max ${MAX_FILE_LABEL} per file.` : (err.message || "Failed to submit application."));
+    }
   };
 
   const track = async () => {
+    const id = trackId.trim();
+    if (!id) {
+      setTrackResult(null);
+      setTrackMessage("Please enter an application ID.");
+      return;
+    }
+    setTrackMessage("");
     setTrackResult(null);
-    const result = await api.track(trackId);
-    setTrackResult(result);
+    try {
+      const result = await api.track(id);
+      const [enriched] = withNotificationAmounts([result], notifications);
+      setTrackResult(enriched || result);
+    } catch (err) {
+      if (err.status === 404) {
+        setTrackMessage("Application not found. Please check the ID and try again.");
+        return;
+      }
+      if (err.status === 401) {
+        setTrackMessage("Your session has expired. Please login again.");
+        return;
+      }
+      setTrackMessage(err.message || "Unable to track application right now.");
+    }
   };
 
   const saveDepartment = async () => {
     const updated = await api.updateProfile({ department: departmentDraft });
     setUser(updated);
     setEditingDepartment(false);
+  };
+
+  const deleteAccount = async () => {
+    if (!window.confirm("Delete your account permanently? This cannot be undone.")) return;
+    setDeleteMessage("");
+    setDeletingAccount(true);
+    try {
+      await api.deleteMe();
+      logout(setUser);
+    } catch (err) {
+      setDeleteMessage(err.message || "Unable to delete account right now.");
+    } finally {
+      setDeletingAccount(false);
+    }
   };
 
   const handleSelect = (item) => {
@@ -177,103 +273,99 @@ export default function StudentDashboard() {
     setActive(item);
   };
 
-  const existingForSemester = Boolean(
-    form.semester &&
-      apps.some((app) => app.application_type === "student" && app.data?.semester === form.semester)
-  );
+  const sixMonthsAgoMs = Date.now() - (180 * 24 * 60 * 60 * 1000);
+  const studentSubmissionCountInSixMonths = apps.filter((app) => (
+    app.application_type === "student" &&
+    app.created_at &&
+    new Date(app.created_at).getTime() >= sixMonthsAgoMs
+  )).length;
+  const studentLimitReached = studentSubmissionCountInSixMonths >= 2;
 
   return (
-    <div className="min-h-screen px-3 py-4 sm:px-4 sm:py-6 md:px-8 md:py-8 lg:h-screen lg:overflow-hidden lg:px-10">
-      <div className="mb-4 flex items-center justify-between lg:hidden">
-        <div>
-          <div className="text-xs uppercase tracking-[0.3em] text-black/40">Engineering</div>
-          <div className="text-lg font-semibold font-display">Incentive Portal</div>
-        </div>
-        <button
-          className="btn btn-ghost"
-          onClick={() => setSidebarOpen(true)}
-          aria-label="Open menu"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-          Menu
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:h-[calc(100vh-4rem)] lg:grid-cols-[280px_minmax(0,1fr)]">
-        <div className="hidden lg:sticky lg:top-0 lg:block lg:h-full">
-          <Sidebar items={menu} active={active} onSelect={handleSelect} />
-        </div>
-        <div className="card h-full min-h-0 overflow-y-auto p-6 md:p-8">
-          <Topbar title={`Student Dashboard`} subtitle={`Hello ${user?.name || ""}`} />
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="panel p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Applications</div>
-              <div className="mt-3 text-2xl font-semibold">{apps.length}</div>
-              <div className="muted text-xs">Submitted by you</div>
-            </div>
-            <div className="panel p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Notifications</div>
-              <div className="mt-3 text-2xl font-semibold">{notifications.length}</div>
-              <div className="muted text-xs">Unread + read</div>
-            </div>
-            <div className="panel p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Role</div>
-              <div className="mt-3 text-lg font-semibold capitalize">{user?.role || "student"}</div>
-              <div className="muted text-xs">Active profile</div>
-            </div>
-            <div className="panel p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Department</div>
-              <div className="mt-3 text-lg font-semibold">{user?.department || "-"}</div>
-              <div className="muted text-xs">Current unit</div>
-            </div>
+    <div className="min-h-screen px-3 py-4 sm:px-4 sm:py-6 md:px-8 md:py-8 lg:min-h-screen lg:px-10">
+      <div className="mx-auto w-full max-w-7xl lg:max-w-none">
+        <div className="mb-4 md:hidden">
+          <div>
+            <div className="text-xs uppercase tracking-[0.3em] text-black/40">Engineering</div>
+            <div className="text-lg font-semibold font-display">Incentive Portal</div>
           </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 md:min-h-[calc(100vh-6rem)] md:grid-cols-[280px_minmax(0,1fr)] md:items-start md:overflow-hidden">
+          <div className="hidden md:sticky md:top-24 md:block md:h-[calc(100vh-8rem)] md:self-start md:overflow-y-auto">
+            <Sidebar items={menu} active={active} onSelect={handleSelect} user={user} />
+          </div>
+          <div className="card p-6 md:h-[calc(100vh-6rem)] md:overflow-y-auto md:p-8">
+          <Topbar title={`Student Dashboard`} subtitle={`Hello ${user?.name || ""}`} />
+          {active !== "Application Form" && (
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="panel p-4">
+                <div className="text-xs uppercase tracking-[0.2em] text-black/40">Applications</div>
+                <div className="mt-3 text-2xl font-semibold">{apps.length}</div>
+                <div className="muted text-xs">Submitted by you</div>
+              </div>
+              <div className="panel p-4">
+                <div className="text-xs uppercase tracking-[0.2em] text-black/40">Notifications</div>
+                <div className="mt-3 text-2xl font-semibold">{notifications.length}</div>
+                <div className="muted text-xs">Unread + read</div>
+              </div>
+              <div className="panel p-4">
+                <div className="text-xs uppercase tracking-[0.2em] text-black/40">Role</div>
+                <div className="mt-3 text-lg font-semibold capitalize">{user?.role || "student"}</div>
+                <div className="muted text-xs">Active profile</div>
+              </div>
+              <div className="panel p-4">
+                <div className="text-xs uppercase tracking-[0.2em] text-black/40">Department</div>
+                <div className="mt-3 text-lg font-semibold">{user?.department || "-"}</div>
+                <div className="muted text-xs">Current unit</div>
+              </div>
+            </div>
+          )}
 
           {active === "Application Form" && (
             <div className="mt-8">
               <div className="panel p-6">
                 <h2 className="text-xl font-semibold font-display">Student Application Form</h2>
                 <p className="muted mt-2 text-sm">Fill in all required fields for the academic year incentive application.</p>
-                {existingForSemester && (
+                {studentLimitReached && (
                   <div className="mt-4 rounded-2xl border border-amber-300/60 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
-                    Form already filled for semester {form.semester}. You cannot submit again for the same semester.
+                    You have already submitted 2 student applications in the last six months. You cannot submit more.
                   </div>
                 )}
-                <form onSubmit={submit} className="mt-8 space-y-8">
-                  <div className="rounded-3xl border border-black/10 bg-white/60 p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
-                    <div className="flex items-center justify-between gap-3">
+                <form onSubmit={submit} className="mt-6 space-y-5 pb-24 sm:mt-8 sm:space-y-8">
+                  <div className="rounded-3xl border border-black/10 bg-white/60 p-4 sm:p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
+                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div className="text-sm font-semibold uppercase tracking-[0.2em] text-black/50">Applicant Details</div>
                       <div className="muted text-xs">Basic identification</div>
                     </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Department</label>
-                        <input className="input mt-2" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} required />
+                        <input className="input mt-2 bg-black/5" value={form.department} readOnly required />
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Applicant Name</label>
-                        <input className="input mt-2 font-semibold" value={form.applicantName} onChange={(e) => setForm({ ...form, applicantName: e.target.value })} required />
+                        <input className="input mt-2 bg-black/5 font-semibold" value={form.applicantName} readOnly required />
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">USN</label>
-                        <input className="input mt-2" value={form.usn} onChange={(e) => setForm({ ...form, usn: e.target.value })} required />
+                        <input className="input mt-2" value={form.usn} onChange={(e) => setForm({ ...form, usn: e.target.value })} required placeholder="eg., CS23022" />
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Mobile Number</label>
-                        <input className="input mt-2" value={form.mobileNumber} onChange={(e) => setForm({ ...form, mobileNumber: e.target.value })} required />
+                        <input className="input mt-2" value={form.mobileNumber} onChange={(e) => setForm({ ...form, mobileNumber: e.target.value })} required placeholder="eg., 9876543210" />
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Semester</label>
-                        <input className="input mt-2" value={form.semester} onChange={(e) => setForm({ ...form, semester: e.target.value })} required />
+                        <input className="input mt-2" value={form.semester} onChange={(e) => setForm({ ...form, semester: e.target.value })} required placeholder="eg., 3" />
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year</label>
-                        <input className="input mt-2" value={form.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} required />
+                        <input className="input mt-2" value={form.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} required placeholder="eg., 2025-2026" />
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Email ID</label>
-                        <input className="input mt-2" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+                        <input className="input mt-2 bg-black/5" type="email" value={form.email} readOnly required />
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Incentive Claims This Academic Year</label>
@@ -295,93 +387,93 @@ export default function StudentDashboard() {
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-black/10 bg-white/60 p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
-                    <div className="flex items-center justify-between gap-3">
+                  <div className="rounded-3xl border border-black/10 bg-white/60 p-4 sm:p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
+                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div className="text-sm font-semibold uppercase tracking-[0.2em] text-black/50">Course Details</div>
                       <div className="muted text-xs">Certification information</div>
                     </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Platform</label>
-                        <input className="input mt-2" value={form.coursePlatform} onChange={(e) => setForm({ ...form, coursePlatform: e.target.value })} required />
+                        <input className="input mt-2" placeholder="e.g., NPTEL, Coursera" value={form.coursePlatform} onChange={(e) => setForm({ ...form, coursePlatform: e.target.value })} required />
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Title of Course</label>
-                        <input className="input mt-2" value={form.courseTitle} onChange={(e) => setForm({ ...form, courseTitle: e.target.value })} required />
+                        <input className="input mt-2" placeholder="e.g., GenAI" value={form.courseTitle} onChange={(e) => setForm({ ...form, courseTitle: e.target.value })} required />
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Session</label>
-                        <input className="input mt-2" value={form.courseSession} onChange={(e) => setForm({ ...form, courseSession: e.target.value })} required />
+                        <input className="input mt-2" value={form.courseSession} onChange={(e) => setForm({ ...form, courseSession: e.target.value })} required placeholder="2025"/>
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Number of Weeks</label>
-                        <input className="input mt-2" type="number" min="1" value={form.courseWeeks} onChange={(e) => setForm({ ...form, courseWeeks: e.target.value })} required />
+                        <input className="input mt-2" type="number" min="1" value={form.courseWeeks} onChange={(e) => setForm({ ...form, courseWeeks: e.target.value })} required placeholder="eg., 4"/>
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Score</label>
-                        <input className="input mt-2" value={form.courseScore} onChange={(e) => setForm({ ...form, courseScore: e.target.value })} required />
+                        <input className="input mt-2" value={form.courseScore} onChange={(e) => setForm({ ...form, courseScore: e.target.value })} required placeholder="eg., 85%"/>
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Category</label>
-                        <input className="input mt-2" value={form.courseCategory} onChange={(e) => setForm({ ...form, courseCategory: e.target.value })} required />
+                        <input className="input mt-2" placeholder="eg., Elite, Sliver, Top 1%, etc..." value={form.courseCategory} onChange={(e) => setForm({ ...form, courseCategory: e.target.value })} required />
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Credits</label>
-                        <input className="input mt-2" type="number" min="0" value={form.courseCredits} onChange={(e) => setForm({ ...form, courseCredits: e.target.value })} required />
+                        <input className="input mt-2" type="number" min="0" value={form.courseCredits} onChange={(e) => setForm({ ...form, courseCredits: e.target.value })} required placeholder="eg., 4"/>
                       </div>
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-black/10 bg-white/60 p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
-                    <div className="flex items-center justify-between gap-3">
+                  <div className="rounded-3xl border border-black/10 bg-white/60 p-4 sm:p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
+                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div className="text-sm font-semibold uppercase tracking-[0.2em] text-black/50">Registration Details</div>
                       <div className="muted text-xs">Fee + claim</div>
                     </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Registration Fee Paid (Rs)</label>
-                        <input className="input mt-2" type="number" min="0" value={form.registrationFeePaid} onChange={(e) => setForm({ ...form, registrationFeePaid: e.target.value })} required />
+                        <input className="input mt-2" type="number" min="0" value={form.registrationFeePaid} onChange={(e) => setForm({ ...form, registrationFeePaid: e.target.value })} required placeholder="eg., 1000"/>
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Permissible Claim (Rs)</label>
-                        <input className="input mt-2" type="number" min="0" value={form.permissibleClaim} onChange={(e) => setForm({ ...form, permissibleClaim: e.target.value })} required />
+                        <input className="input mt-2" type="number" min="0" value={form.permissibleClaim} onChange={(e) => setForm({ ...form, permissibleClaim: e.target.value })} required placeholder="eg., 500"/>
                       </div>
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-black/10 bg-white/60 p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
-                    <div className="flex items-center justify-between gap-3">
+                  <div className="rounded-3xl border border-black/10 bg-white/60 p-4 sm:p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
+                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div className="text-sm font-semibold uppercase tracking-[0.2em] text-black/50">Bank Details</div>
                       <div className="muted text-xs">For reimbursement</div>
                     </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Account Number</label>
-                        <input className="input mt-2" value={form.bankAccountNumber} onChange={(e) => setForm({ ...form, bankAccountNumber: e.target.value })} required />
+                        <input className="input mt-2" value={form.bankAccountNumber} onChange={(e) => setForm({ ...form, bankAccountNumber: e.target.value })} required placeholder="7994566322111" />
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">IFSC Code</label>
-                        <input className="input mt-2" value={form.bankIfsc} onChange={(e) => setForm({ ...form, bankIfsc: e.target.value })} required />
+                        <input className="input mt-2" value={form.bankIfsc} onChange={(e) => setForm({ ...form, bankIfsc: e.target.value })} required placeholder="eg., IPS00001"/>
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Branch</label>
-                        <input className="input mt-2" value={form.bankBranch} onChange={(e) => setForm({ ...form, bankBranch: e.target.value })} required />
+                        <input className="input mt-2" value={form.bankBranch} onChange={(e) => setForm({ ...form, bankBranch: e.target.value })} required placeholder="eg., Gandhi Nagar"/>
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Bank Name</label>
-                        <input className="input mt-2" value={form.bankName} onChange={(e) => setForm({ ...form, bankName: e.target.value })} required />
+                        <input className="input mt-2" value={form.bankName} onChange={(e) => setForm({ ...form, bankName: e.target.value })} required placeholder="eg., Bank Of India"/>
                       </div>
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-black/10 bg-white/60 p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
-                    <div className="flex items-center justify-between gap-3">
+                  <div className="rounded-3xl border border-black/10 bg-white/60 p-4 sm:p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
+                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div className="text-sm font-semibold uppercase tracking-[0.2em] text-black/50">Documents Attached</div>
                       <div className="muted text-xs">Upload proofs</div>
                     </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
                       <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Fee Payment Receipt</label>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Fee Payment Receipt (Max 150KB)</label>
                         <input
                           className="input mt-2"
                           type="file"
@@ -390,7 +482,7 @@ export default function StudentDashboard() {
                         {form.feeReceiptFile && <div className="muted mt-1 text-xs">{form.feeReceiptFile?.name}</div>}
                       </div>
                       <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Certificate From Certification Authority</label>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Certificate From Certification Authority (Max 150KB)</label>
                         <input
                           className="input mt-2"
                           type="file"
@@ -399,7 +491,7 @@ export default function StudentDashboard() {
                         {form.certificateFile && <div className="muted mt-1 text-xs">{form.certificateFile?.name}</div>}
                       </div>
                       <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Bank Passbook</label>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Bank Passbook (Max 150KB)</label>
                         <input
                           className="input mt-2"
                           type="file"
@@ -408,7 +500,7 @@ export default function StudentDashboard() {
                         {form.bankPassbookFile && <div className="muted mt-1 text-xs">{form.bankPassbookFile?.name}</div>}
                       </div>
                       <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Signature</label>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Signature (Max 150KB)</label>
                         <input
                           className="input mt-2"
                           type="file"
@@ -419,8 +511,8 @@ export default function StudentDashboard() {
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-black/10 bg-white/60 p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
-                    <div className="flex items-center justify-between gap-3">
+                  <div className="rounded-3xl border border-black/10 bg-white/60 p-4 sm:p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
+                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div className="text-sm font-semibold uppercase tracking-[0.2em] text-black/50">Declaration</div>
                       <div className="muted text-xs">Required to submit</div>
                     </div>
@@ -440,46 +532,52 @@ export default function StudentDashboard() {
                     </label>
                   </div>
 
-                  <div className="flex flex-wrap gap-3">
-                    <button className="btn btn-primary" type="submit" disabled={existingForSemester}>
-                      {existingForSemester ? "Already Submitted" : "Submit Application"}
-                    </button>
-                    <button
-                      className="btn btn-ghost"
-                      type="button"
-                      onClick={() => setForm({
-                        department: "",
-                        applicantName: "",
-                        usn: "",
-                        mobileNumber: "",
-                        semester: "",
-                        academicYear: "",
-                        email: "",
-                        incentiveClaimCount: "00",
-                        coursePlatform: "",
-                        courseTitle: "",
-                        courseSession: "",
-                        courseWeeks: "",
-                        courseScore: "",
-                        courseCategory: "",
-                        courseCredits: "",
-                        registrationFeePaid: "",
-                        permissibleClaim: "",
-                        bankAccountNumber: "",
-                        bankIfsc: "",
-                        bankBranch: "",
-                        bankName: "",
-                        feeReceiptFile: null,
-                        certificateFile: null,
-                        bankPassbookFile: null,
-                        signatureFile: null,
-                        declarationAccepted: false
-                      })}
-                    >
-                      Clear
-                    </button>
+                  <div className="sticky bottom-4 mt-6 rounded-2xl border border-black/10 bg-white/90 p-3 backdrop-blur">
+                    <div className="flex flex-wrap gap-3">
+                      <button className="btn btn-primary w-full sm:w-auto" type="submit" disabled={studentLimitReached}>
+                      {studentLimitReached ? "Limit Reached" : "Submit Application"}
+                      </button>
+                      <button
+                        className="btn btn-ghost w-full sm:w-auto"
+                        type="button"
+                        onClick={() => setForm({
+                          department: user?.department || "",
+                          applicantName: user?.name || "",
+                          usn: "",
+                          mobileNumber: "",
+                          semester: "",
+                          academicYear: "",
+                          email: user?.email || "",
+                          incentiveClaimCount: "00",
+                          coursePlatform: "",
+                          courseTitle: "",
+                          courseSession: "",
+                          courseWeeks: "",
+                          courseScore: "",
+                          courseCategory: "",
+                          courseCredits: "",
+                          registrationFeePaid: "",
+                          permissibleClaim: "",
+                          bankAccountNumber: "",
+                          bankIfsc: "",
+                          bankBranch: "",
+                          bankName: "",
+                          feeReceiptFile: null,
+                          certificateFile: null,
+                          bankPassbookFile: null,
+                          signatureFile: null,
+                          declarationAccepted: false
+                        })}
+                      >
+                        Clear
+                      </button>
+                    </div>
                   </div>
-                  {message && <p className="text-emerald-600 text-sm">{message}</p>}
+                  {message && (
+                    <p className={`text-sm ${messageType === "error" ? "text-rose-600" : "text-emerald-600"}`}>
+                      {message}
+                    </p>
+                  )}
                 </form>
               </div>
             </div>
@@ -489,7 +587,10 @@ export default function StudentDashboard() {
             <div className="mt-8">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold font-display">My Applications</h2>
-                <div className="muted text-sm">{apps.length} total</div>
+                <div className="flex items-center gap-3">
+                  <button className="btn btn-ghost" type="button" onClick={refreshData}>Refresh</button>
+                  <div className="muted text-sm">{apps.length} total</div>
+                </div>
               </div>
               <div className="mt-4 grid gap-4">
                 {apps.map((app) => (
@@ -533,7 +634,7 @@ export default function StudentDashboard() {
                       <div><span className="text-black/50">Credits:</span> {app.data.course_credits ?? "-"}</div>
                       <div><span className="text-black/50">Fee Paid:</span> {app.data.registration_fee_paid ?? "-"}</div>
                       <div><span className="text-black/50">Permissible Claim:</span> {app.data.permissible_claim ?? "-"}</div>
-                      <div><span className="text-black/50">Approved Amount:</span> {app.data.approved_amount ?? "-"}</div>
+                      <div><span className="text-black/50">Approved Amount:</span> {getApprovedAmount(app)}</div>
                     </div>
                   </div>
                 ))}
@@ -549,11 +650,12 @@ export default function StudentDashboard() {
                 <input className="input flex-1" placeholder="Application ID" value={trackId} onChange={(e) => setTrackId(e.target.value)} />
                 <button className="btn btn-ghost" onClick={track}>Track</button>
               </div>
+              {trackMessage && <div className="mt-3 text-sm text-rose-600">{trackMessage}</div>}
               {trackResult && (
                 <div className="mt-4 panel p-4">
                   <div className="text-sm font-semibold">Application {trackResult.id}</div>
                   <div className="muted mt-1 text-sm">Status: {trackResult.status}</div>
-                  <div className="muted mt-1 text-sm">Approved Amount: {trackResult.data?.approved_amount ?? "-"}</div>
+                  <div className="muted mt-1 text-sm">Approved Amount: {getApprovedAmount(trackResult)}</div>
                 </div>
               )}
             </div>
@@ -561,7 +663,10 @@ export default function StudentDashboard() {
 
           {active === "Notifications" && (
             <div className="mt-8">
-              <h2 className="text-xl font-semibold font-display">Notifications</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold font-display">Notifications</h2>
+                <button className="btn btn-ghost" type="button" onClick={refreshData}>Refresh</button>
+              </div>
               <div className="mt-4 space-y-3">
                 {notifications.map((n) => (
                   <div key={n.id} className={`panel p-4 ${n.is_read ? "" : "ring-2 ring-black/20"}`}>
@@ -637,6 +742,26 @@ export default function StudentDashboard() {
             </div>
           )}
 
+          {active === "Delete Account" && (
+            <div className="mt-8">
+              <h2 className="text-xl font-semibold font-display text-rose-700">Delete Account</h2>
+              <p className="mt-2 text-sm text-black/70">
+                This permanently deletes your account and related records. This action cannot be undone.
+              </p>
+              <div className="mt-4 panel border-rose-300/70 bg-rose-50 p-4">
+                <button
+                  className="btn btn-primary bg-rose-600 hover:bg-rose-700 disabled:opacity-60"
+                  type="button"
+                  onClick={deleteAccount}
+                  disabled={deletingAccount}
+                >
+                  {deletingAccount ? "Deleting..." : "Delete My Account"}
+                </button>
+                {deleteMessage && <div className="mt-3 text-sm text-rose-700">{deleteMessage}</div>}
+              </div>
+            </div>
+          )}
+
           {active === "Logout" && (
             <div className="mt-8">
               <h2 className="text-xl font-semibold font-display">Logout</h2>
@@ -646,15 +771,16 @@ export default function StudentDashboard() {
           )}
         </div>
       </div>
+      </div>
 
       {sidebarOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
+        <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-4 right-4 top-6">
             <div className="card p-4">
               <div className="flex items-center justify-between">
                 <div className="text-lg font-semibold font-display">Menu</div>
-                <button className="btn btn-ghost" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
+                <button className="btn btn-ghost" onClick={() => setSidebarOpen(false)} aria-label="Close menu" type="button">
                   Close
                 </button>
               </div>
@@ -666,6 +792,7 @@ export default function StudentDashboard() {
                     handleSelect(item);
                     setSidebarOpen(false);
                   }}
+                  user={user}
                 />
               </div>
             </div>
@@ -675,6 +802,7 @@ export default function StudentDashboard() {
     </div>
   );
 }
+
 
 
 

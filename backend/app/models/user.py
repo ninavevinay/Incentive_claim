@@ -9,7 +9,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[str] = mapped_column(String(20))
+    role: Mapped[str] = mapped_column(String(64))
     department: Mapped[str] = mapped_column(String(120))
 
     applications = relationship("Application", back_populates="owner")

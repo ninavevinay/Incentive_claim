@@ -7,15 +7,16 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(120) NOT NULL,
   email VARCHAR(255) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
-  role VARCHAR(20) NOT NULL,
+  role VARCHAR(64) NOT NULL,
   department VARCHAR(120) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS applications (
   id SERIAL PRIMARY KEY,
   owner_id INT NOT NULL REFERENCES users(id),
-  application_type VARCHAR(20) NOT NULL,
+  application_type VARCHAR(64) NOT NULL,
   status VARCHAR(64) NOT NULL DEFAULT 'submitted',
+  approved_amount DOUBLE PRECISION NULL,
   data JSONB NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -45,4 +46,11 @@ CREATE TABLE IF NOT EXISTS password_reset_requests (
   request_ip VARCHAR(64) NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   used_at TIMESTAMP NULL
+);
+
+CREATE TABLE IF NOT EXISTS form_windows (
+  id INT PRIMARY KEY,
+  start_date DATE NULL,
+  end_date DATE NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

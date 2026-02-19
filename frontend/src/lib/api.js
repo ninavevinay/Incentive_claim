@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL || "/api";
 const TOKEN_KEY = "token";
 
 function getStorage() {
@@ -48,10 +48,10 @@ async function request(path, options = {}) {
 
 export const api = {
   register: (payload) => request("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
-  registerAuthority: (payload) => request("/auth/register-authority", { method: "POST", body: JSON.stringify(payload) }),
   login: (payload) => request("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
   me: () => request("/profile/me"),
   updateProfile: (payload) => request("/profile/me", { method: "PUT", body: JSON.stringify(payload) }),
+  deleteMe: () => request("/profile/me", { method: "DELETE" }),
   submitStudent: (payload) => request("/applications/student", { method: "POST", body: payload }),
   submitFaculty: (payload) => request("/applications/faculty", { method: "POST", body: payload }),
   myApplications: () => request("/applications/mine"),
@@ -69,10 +69,19 @@ export const api = {
   track: (id) => request(`/applications/track/${id}`),
   notifications: () => request("/notifications/"),
   markRead: (id) => request(`/notifications/${id}/read`, { method: "POST" }),
+  publicNotices: () => request("/notices/public"),
+  createNotice: (payload) => request("/notices/", { method: "POST", body: payload }),
   adminUsers: () => request("/admin/users"),
   adminApplications: () => request("/admin/applications"),
+  adminDeleteApplication: (id) => request(`/admin/applications/${id}`, { method: "DELETE" }),
+  adminDeleteAllApplications: () => request("/admin/applications", { method: "DELETE" }),
   adminLoginEvents: () => request("/admin/login-events"),
   adminPasswordResets: () => request("/admin/password-resets"),
+  adminFormWindow: () => request("/admin/form-window"),
+  adminSetFormWindow: (payload) =>
+    request("/admin/form-window", { method: "PUT", body: JSON.stringify(payload) }),
+  adminCreateAuthorityUser: (payload) =>
+    request("/admin/users/authority", { method: "POST", body: JSON.stringify(payload) }),
   adminSetUserPassword: (payload) =>
     request("/admin/users/password", { method: "POST", body: JSON.stringify(payload) }),
   adminDeleteUser: (id) => request(`/admin/users/${id}`, { method: "DELETE" })

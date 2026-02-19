@@ -78,9 +78,6 @@ export default function AdminRegister() {
           <p className="mt-2 text-sm text-black/60">
             Student/Faculty registration? <Link className="text-black underline" to="/register">Go to Register</Link>
           </p>
-          <p className="mt-2 text-sm text-black/60">
-            Authority registration? <Link className="text-black underline" to="/register-authority">Register here</Link>
-          </p>
         </section>
       </div>
     </div>

@@ -1,17 +1,29 @@
 from datetime import datetime, timedelta
-from passlib.context import CryptContext
+import hashlib
+import bcrypt
 from jose import jwt
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_HASH_PREFIX = "bcrypt-sha256$"
+
+def _prehash_password(password: str) -> bytes:
+    return hashlib.sha256(password.encode("utf-8")).digest()
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    hashed = bcrypt.hashpw(_prehash_password(password), bcrypt.gensalt())
+    return f"{_HASH_PREFIX}{hashed.decode('utf-8')}"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    if hashed_password.startswith(_HASH_PREFIX):
+        stored = hashed_password[len(_HASH_PREFIX):].encode("utf-8")
+        return bcrypt.checkpw(_prehash_password(plain_password), stored)
+    # Legacy bcrypt hashes without the prefix.
+    try:
+        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    except ValueError:
+        return False
 
 
 def create_access_token(subject: str) -> str:

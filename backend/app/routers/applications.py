@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
+import re
 from app.core.database import get_db
 from app.models.application import Application
+from app.models.form_window import FormWindow
 from app.models.notification import Notification
 from app.schemas.application import StudentApplicationCreate, FacultyApplicationCreate, ApplicationOut, ApplicationReview
 from app.routers.profile import get_current_user
@@ -46,15 +48,123 @@ def _norm(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
+MAX_UPLOAD_BYTES = 150 * 1024
+
+
 def _save_upload(file: UploadFile | None) -> str | None:
     if not file:
         return None
     ext = os.path.splitext(file.filename or "")[1]
     name = f"{uuid.uuid4().hex}{ext}"
     path = os.path.join("uploads", name)
+    size = 0
     with open(path, "wb") as out:
-        out.write(file.file.read())
+        while True:
+            chunk = file.file.read(64 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_UPLOAD_BYTES:
+                out.close()
+                os.remove(path)
+                raise HTTPException(status_code=413, detail="File too large. Max 150KB.")
+            out.write(chunk)
     return f"/uploads/{name}"
+
+
+def _enforce_form_window_open(db: Session) -> None:
+    window = db.query(FormWindow).filter(FormWindow.id == 1).first()
+    if not window or window.start_date is None or window.end_date is None:
+        return
+    today = datetime.utcnow().date()
+    if today < window.start_date or today > window.end_date:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Form filling is open only from {window.start_date.isoformat()} to {window.end_date.isoformat()}",
+        )
+
+
+def _backfill_approved_amount_for_apps(db: Session, apps: list[Application]) -> int:
+    approved_apps = [app for app in apps if app.status == "approved"]
+    if not approved_apps:
+        return 0
+
+    approved_amount_pattern = re.compile(
+        r"Application ID\s+(?P<app_id>\d+)\s+is approved with amount Rs\.\s*(?P<amount>\d+(?:\.\d+)?)",
+        re.IGNORECASE,
+    )
+    app_ids = [app.id for app in approved_apps]
+    owner_ids = list({app.owner_id for app in approved_apps})
+
+    notes = (
+        db.query(Notification)
+        .filter(Notification.user_id.in_(owner_ids))
+        .filter(Notification.message.ilike("%is approved with amount Rs.%"))
+        .order_by(Notification.created_at.desc())
+        .all()
+    )
+    amount_by_app_owner: dict[tuple[int, int], float] = {}
+    amount_by_app_id: dict[int, float] = {}
+    for note in notes:
+        match = approved_amount_pattern.search(note.message or "")
+        if not match:
+            continue
+        app_id = int(match.group("app_id"))
+        if app_id not in app_ids:
+            continue
+        amount = float(match.group("amount"))
+        amount_by_app_id.setdefault(app_id, amount)
+        amount_by_app_owner.setdefault((app_id, note.user_id), amount)
+
+    changed = 0
+    for app in approved_apps:
+        data = app.data or {}
+        canonical_amount = app.approved_amount
+        if canonical_amount in {None, ""}:
+            data_amount = data.get("approved_amount")
+            if data_amount not in {None, ""}:
+                canonical_amount = float(data_amount)
+                app.approved_amount = canonical_amount
+                data["notification_approved_amount"] = canonical_amount
+                app.data = data
+                db.add(app)
+                changed += 1
+                continue
+
+        reviews = data.get("reviews") or []
+        institution_review = next(
+            (
+                review
+                for review in reversed(reviews)
+                if str(review.get("role", "")).strip().lower() == "institution_coordinator"
+                and review.get("action") == "approve"
+                and review.get("approved_amount") not in {None, ""}
+            ),
+            None,
+        )
+        if institution_review is not None:
+            amount_value = institution_review.get("approved_amount")
+            canonical_amount = float(amount_value)
+        else:
+            amount = amount_by_app_owner.get((app.id, app.owner_id))
+            if amount is None:
+                amount = amount_by_app_id.get(app.id)
+            if amount is None:
+                continue
+            canonical_amount = float(amount)
+
+        app.approved_amount = canonical_amount
+        data["approved_amount"] = canonical_amount
+        data["notification_approved_amount"] = canonical_amount
+        app.data = data
+        db.add(app)
+        changed += 1
+
+    if changed:
+        db.commit()
+        for app in approved_apps:
+            db.refresh(app)
+    return changed
 
 
 def repair_legacy_review_history(db: Session) -> int:
@@ -77,6 +187,27 @@ def repair_legacy_review_history(db: Session) -> int:
         else:
             reviewer_ids = reviewers_by_role_department.get((role, department or ""), [])
         return reviewer_ids[0] if len(reviewer_ids) == 1 else None
+
+    approved_amount_pattern = re.compile(
+        r"Application ID\s+(?P<app_id>\d+)\s+is approved with amount Rs\.\s*(?P<amount>\d+(?:\.\d+)?)",
+        re.IGNORECASE,
+    )
+    notification_amount_by_app: dict[tuple[int, int], float] = {}
+    notification_amount_by_id: dict[int, float] = {}
+    approval_notifications = (
+        db.query(Notification)
+        .filter(Notification.message.ilike("%is approved with amount Rs.%"))
+        .order_by(Notification.created_at.desc())
+        .all()
+    )
+    for note in approval_notifications:
+        match = approved_amount_pattern.search(note.message or "")
+        if not match:
+            continue
+        app_id = int(match.group("app_id"))
+        amount = float(match.group("amount"))
+        notification_amount_by_id.setdefault(app_id, amount)
+        notification_amount_by_app.setdefault((app_id, note.user_id), amount)
 
     updated_count = 0
     apps = db.query(Application).order_by(Application.id.asc()).all()
@@ -122,6 +253,40 @@ def repair_legacy_review_history(db: Session) -> int:
             ensure_review("department_hod", "approve")
         if status == "approved":
             ensure_review("institution_coordinator", "approve")
+
+            # Backfill missing approved amount for legacy rows.
+            approved_amount = app.approved_amount if app.approved_amount not in {None, ""} else data.get("approved_amount")
+            if approved_amount in {None, ""}:
+                institution_review = next(
+                    (
+                        review
+                        for review in reversed(reviews)
+                        if str(review.get("role", "")).strip().lower() == "institution_coordinator"
+                        and review.get("action") == "approve"
+                        and review.get("approved_amount") not in {None, ""}
+                    ),
+                    None,
+                )
+                if institution_review is not None:
+                    amount_value = institution_review.get("approved_amount")
+                    app.approved_amount = float(amount_value)
+                    data["approved_amount"] = amount_value
+                    data["notification_approved_amount"] = amount_value
+                    changed = True
+                else:
+                    amount_from_notification = notification_amount_by_app.get((app.id, app.owner_id))
+                    if amount_from_notification is None:
+                        amount_from_notification = notification_amount_by_id.get(app.id)
+                    if amount_from_notification is not None:
+                        app.approved_amount = float(amount_from_notification)
+                        data["approved_amount"] = amount_from_notification
+                        data["notification_approved_amount"] = amount_from_notification
+                        changed = True
+            else:
+                app.approved_amount = float(approved_amount)
+            if data.get("notification_approved_amount") in {None, ""} and data.get("approved_amount") not in {None, ""}:
+                data["notification_approved_amount"] = data.get("approved_amount")
+                changed = True
 
         if status == "rejected":
             last_reject_role = data.get("last_reject_role")
@@ -169,22 +334,21 @@ def create_student_application(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
+    _enforce_form_window_open(db)
     if user.role != "student":
         raise HTTPException(status_code=403, detail="Only students can submit this form")
-    last_app = db.query(Application).filter(
-        Application.owner_id == user.id,
-        Application.application_type == "student"
-    ).order_by(Application.created_at.desc()).first()
-    if last_app and (datetime.utcnow() - last_app.created_at) < timedelta(days=180):
-        raise HTTPException(status_code=400, detail="You can submit only one application every six months")
     existing = db.query(Application).filter(
         Application.owner_id == user.id,
         Application.application_type == "student"
     ).all()
-    for app_item in existing:
-        data = app_item.data or {}
-        if data.get("semester") == semester:
-            raise HTTPException(status_code=400, detail="Only one application is allowed per semester")
+    six_months_ago = datetime.utcnow() - timedelta(days=180)
+    recent_count = sum(
+        1
+        for app_item in existing
+        if app_item.created_at and app_item.created_at >= six_months_ago
+    )
+    if recent_count >= 2:
+        raise HTTPException(status_code=400, detail="Only two student applications are allowed in six months")
     payload = {
         "department": department,
         "applicant_name": applicant_name,
@@ -244,14 +408,21 @@ def create_faculty_application(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
+    _enforce_form_window_open(db)
     if user.role != "faculty":
         raise HTTPException(status_code=403, detail="Only faculty can submit this form")
-    last_app = db.query(Application).filter(
+    existing = db.query(Application).filter(
         Application.owner_id == user.id,
         Application.application_type == "faculty"
-    ).order_by(Application.created_at.desc()).first()
-    if last_app and (datetime.utcnow() - last_app.created_at) < timedelta(days=180):
-        raise HTTPException(status_code=400, detail="You can submit only one application every six months")
+    ).all()
+    six_months_ago = datetime.utcnow() - timedelta(days=180)
+    recent_count = sum(
+        1
+        for app_item in existing
+        if app_item.created_at and app_item.created_at >= six_months_ago
+    )
+    if recent_count >= 2:
+        raise HTTPException(status_code=400, detail="Only two faculty applications are allowed in six months")
     payload = {
         "department": department,
         "applicant_name": applicant_name,
@@ -282,13 +453,16 @@ def create_faculty_application(
 
 @router.get("/mine", response_model=list[ApplicationOut])
 def my_applications(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return db.query(Application).filter(Application.owner_id == user.id).order_by(Application.created_at.desc()).all()
+    apps = db.query(Application).filter(Application.owner_id == user.id).order_by(Application.created_at.desc()).all()
+    _backfill_approved_amount_for_apps(db, apps)
+    return apps
 
 @router.get("/track/{application_id}", response_model=ApplicationOut)
 def track(application_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     app = db.query(Application).filter(Application.id == application_id, Application.owner_id == user.id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
+    _backfill_approved_amount_for_apps(db, [app])
     return app
 
 @router.get("/pending", response_model=list[ApplicationOut])
@@ -307,7 +481,9 @@ def pending_applications(
     }
     target_status = status_map[role]
     apps = db.query(Application).filter(Application.status == target_status).order_by(Application.created_at.desc()).all()
-    return _filter_apps_by_authority_scope(apps, role, user.department, department)
+    scoped = _filter_apps_by_authority_scope(apps, role, user.department, department)
+    _backfill_approved_amount_for_apps(db, scoped)
+    return scoped
 
 @router.get("/all", response_model=list[ApplicationOut])
 def all_applications(
@@ -319,7 +495,9 @@ def all_applications(
     if role not in {"department_coordinator", "department_hod", "institution_coordinator"}:
         raise HTTPException(status_code=403, detail="Not authorized")
     apps = db.query(Application).order_by(Application.created_at.desc()).all()
-    return _filter_apps_by_authority_scope(apps, role, user.department, department)
+    scoped = _filter_apps_by_authority_scope(apps, role, user.department, department)
+    _backfill_approved_amount_for_apps(db, scoped)
+    return scoped
 
 @router.get("/my-reviewed", response_model=list[ApplicationOut])
 def my_reviewed_applications(
@@ -391,6 +569,7 @@ def my_reviewed_applications(
         if has_my_review:
             filtered.append(app)
 
+    _backfill_approved_amount_for_apps(db, filtered)
     return filtered
 
 @router.get("/role-reviewed", response_model=list[ApplicationOut])
@@ -416,7 +595,9 @@ def role_reviewed_applications(
         )
         if has_role_review:
             filtered.append(app)
-    return _filter_apps_by_authority_scope(filtered, role, user.department, None)
+    scoped = _filter_apps_by_authority_scope(filtered, role, user.department, None)
+    _backfill_approved_amount_for_apps(db, scoped)
+    return scoped
 
 @router.post("/{application_id}/review", response_model=ApplicationOut)
 def review_application(application_id: int, payload: ApplicationReview, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -470,8 +651,12 @@ def review_application(application_id: int, payload: ApplicationReview, db: Sess
     if payload.action == "reject":
         data["last_reject_remark"] = payload.remark
         data["last_reject_role"] = role
+        if role == "institution_coordinator":
+            app.approved_amount = None
     if payload.action == "approve" and role == "institution_coordinator":
+        app.approved_amount = payload.approved_amount
         data["approved_amount"] = payload.approved_amount
+        data["notification_approved_amount"] = payload.approved_amount
         data["approved_by_role"] = role
         data["approved_by_user_id"] = user.id
         data["approved_at"] = datetime.utcnow().isoformat()

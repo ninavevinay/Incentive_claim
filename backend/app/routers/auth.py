@@ -45,28 +45,10 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
 @router.post("/register-authority", response_model=TokenResponse)
 def register_authority(payload: RegisterRequest, db: Session = Depends(get_db)):
-    allowed_roles = {
-        "department_coordinator",
-        "department_hod",
-        "institution_coordinator"
-    }
-    if payload.role not in allowed_roles:
-        raise HTTPException(status_code=400, detail="Invalid authority role")
-    existing = db.query(User).filter(User.email == payload.email).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    user = User(
-        name=payload.name,
-        email=payload.email,
-        password_hash=hash_password(payload.password),
-        role=payload.role,
-        department=payload.department,
+    raise HTTPException(
+        status_code=403,
+        detail="Authority self-registration is disabled. Contact admin."
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    token = create_access_token(str(user.id))
-    return TokenResponse(access_token=token)
 
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):

@@ -30,17 +30,17 @@ export default function Register() {
         <section className="card p-6 md:p-10">
           <div className="badge">Incentive Portal</div>
           <h1 className="mt-6 text-3xl font-semibold font-display sm:text-4xl">Create your incentive profile.</h1>
-          <p className="muted mt-3 text-sm">
-            Register once to unlock student and faculty workflows with role-based dashboards.
-          </p>
+          <p className="muted mt-3 text-sm">Vision &amp; Mission</p>
           <div className="mt-8 space-y-4">
             <div className="panel p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Smart Routing</div>
-              <p className="mt-2 text-sm">Your department and role map to the right approvals.</p>
+              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Vision</div>
+              <p className="mt-2 text-sm">Emerge as a leading Institute for developing competent and creative Professionals.</p>
             </div>
             <div className="panel p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Instant Tracking</div>
-              <p className="mt-2 text-sm">Track submissions without emailing admins.</p>
+              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Mission</div>
+              <p className="mt-2 text-sm">Providing Quality Infrastructure and experienced faculty for academic excellence</p>
+              <p className="mt-2 text-sm">Inculcating skills, knowledge and opportunities for competency and creativity</p>
+              <p className="mt-2 text-sm">Aligning with Industries for knowledge sharing, research and development</p>
             </div>
           </div>
         </section>
@@ -66,14 +66,12 @@ export default function Register() {
               <select className="input mt-2" required value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
                 <option value="student">Student</option>
                 <option value="faculty">Faculty</option>
-                <option value="admin">Admin</option>
               </select>
             </div>
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-black/40">Department</label>
               <select className="input mt-2" required value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })}>
                 <option value="" disabled>Select department</option>
-                <option value="Administration">Administration</option>
                 <option value="First Year">First Year</option>
                 <option value="CSE">CSE</option>
                 <option value="AIML">AIML</option>

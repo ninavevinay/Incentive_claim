@@ -1,13 +1,21 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { handleLogin, useAuth } from "../lib/auth.jsx";
 import { getDashboardPathForUser } from "../lib/routeMap.js";
+import { api } from "../lib/api.js";
+
+const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 export default function Login() {
   const navigate = useNavigate();
   const { setUser } = useAuth();
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState(null);
+  const [notices, setNotices] = useState([]);
+
+  useEffect(() => {
+    api.publicNotices().then(setNotices).catch(() => setNotices([]));
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -47,6 +55,28 @@ export default function Login() {
           <div className="mt-8 rounded-2xl border border-black/10 bg-white/70 p-4">
             <div className="text-sm font-semibold">Secure access</div>
             <p className="muted mt-1 text-sm">All data is encrypted and stored in the campus system.</p>
+          </div>
+          <div className="mt-4 rounded-2xl border border-black/10 bg-white/70 p-4">
+            <div className="text-sm font-semibold">Notices</div>
+            <div className="mt-2 space-y-2 text-sm">
+              {notices.slice(0, 6).map((notice) => {
+                const href = notice.file_path?.startsWith("http")
+                  ? notice.file_path
+                  : `${API_URL}${notice.file_path || ""}`;
+                return (
+                  <div key={notice.id} className="rounded-xl border border-black/10 bg-white/60 p-3">
+                    <div className="font-medium">{notice.title}</div>
+                    <div className="muted mt-1 text-xs">{new Date(notice.created_at).toLocaleDateString()}</div>
+                    <a className="mt-2 inline-block text-black underline" href={href} target="_blank" rel="noreferrer">
+                      View Notice
+                    </a>
+                  </div>
+                );
+              })}
+              {notices.length === 0 && (
+                <div className="muted text-sm">No notices available.</div>
+              )}
+            </div>
           </div>
         </section>
 

@@ -54,6 +54,7 @@ class ApplicationOut(BaseModel):
     id: int
     application_type: str
     status: str
+    approved_amount: float | None = None
     data: dict
     created_at: datetime
 

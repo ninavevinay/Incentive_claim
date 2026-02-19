@@ -3,17 +3,19 @@ import Sidebar from "../components/Sidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../lib/api.js";
 import { useAuth, logout } from "../lib/auth.jsx";
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+import { getApprovedAmount, getInstitutionCoordinatorApprovedAmount } from "../lib/amount.js";
+const API_URL = import.meta.env.VITE_API_URL || "/api";
 
-const menu = [
+const baseMenu = [
   "Dashboard",
   "Pending Applications",
   "My Approved Applications",
-  "My Rejected Applications",
   "Total Applications",
   "Profile",
+  "Delete Account",
   "Logout"
 ];
+const AUTO_REFRESH_MS = 5000;
 
 const ROLE_LABELS = {
   department_coordinator: "Department Coordinator",
@@ -23,17 +25,25 @@ const ROLE_LABELS = {
 
 export default function AuthorityDashboard() {
   const { user, setUser } = useAuth();
-  const [active, setActive] = useState(menu[0]);
+  const [active, setActive] = useState("Dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [apps, setApps] = useState([]);
   const [allApps, setAllApps] = useState([]);
   const [myApprovedApps, setMyApprovedApps] = useState([]);
-  const [myRejectedApps, setMyRejectedApps] = useState([]);
+  const [notices, setNotices] = useState([]);
+  const [noticeTitle, setNoticeTitle] = useState("");
+  const [noticeFile, setNoticeFile] = useState(null);
+  const [noticeMessage, setNoticeMessage] = useState("");
   const [message, setMessage] = useState("");
   const [editingDepartment, setEditingDepartment] = useState(false);
   const [departmentDraft, setDepartmentDraft] = useState("");
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteMessage, setDeleteMessage] = useState("");
   const [rejectRemarks, setRejectRemarks] = useState({});
   const [approveAmounts, setApproveAmounts] = useState({});
+  const menu = user?.role === "institution_coordinator"
+    ? [...baseMenu.slice(0, 5), "Notice", ...baseMenu.slice(5)]
+    : baseMenu;
 
   const scopedDepartment = user?.role === "institution_coordinator" ? "" : (user?.department || "");
   const fetchPending = async () => api.pendingApplications(scopedDepartment);
@@ -44,13 +54,13 @@ export default function AuthorityDashboard() {
     fetchPending().then(setApps).catch(() => setApps([]));
     fetchAll().then(setAllApps).catch(() => setAllApps([]));
     api.myReviewedApplications("approve").then(setMyApprovedApps).catch(() => setMyApprovedApps([]));
-    api.myReviewedApplications("reject").then(setMyRejectedApps).catch(() => setMyRejectedApps([]));
+    api.publicNotices().then(setNotices).catch(() => setNotices([]));
     const interval = setInterval(() => {
       fetchPending().then(setApps).catch(() => setApps([]));
       fetchAll().then(setAllApps).catch(() => setAllApps([]));
       api.myReviewedApplications("approve").then(setMyApprovedApps).catch(() => setMyApprovedApps([]));
-      api.myReviewedApplications("reject").then(setMyRejectedApps).catch(() => setMyRejectedApps([]));
-    }, 30000);
+      api.publicNotices().then(setNotices).catch(() => setNotices([]));
+    }, AUTO_REFRESH_MS);
     return () => clearInterval(interval);
   }, [user]);
 
@@ -62,8 +72,30 @@ export default function AuthorityDashboard() {
     setApps(await fetchPending().catch(() => []));
     setAllApps(await fetchAll().catch(() => []));
     setMyApprovedApps(await api.myReviewedApplications("approve").catch(() => []));
-    setMyRejectedApps(await api.myReviewedApplications("reject").catch(() => []));
+    setNotices(await api.publicNotices().catch(() => []));
   };
+
+  const refreshApprovedOnly = async () => {
+    setMyApprovedApps(await api.myReviewedApplications("approve").catch(() => []));
+  };
+
+  useEffect(() => {
+    if (!menu.includes(active)) {
+      setActive("Dashboard");
+    }
+  }, [user?.role, active]);
+
+  useEffect(() => {
+    if (active === "My Approved Applications") {
+      refreshApprovedOnly();
+    }
+  }, [active]);
+
+  useEffect(() => {
+    const handleToggle = () => setSidebarOpen((prev) => !prev);
+    window.addEventListener("portal:toggle-dashboard-menu", handleToggle);
+    return () => window.removeEventListener("portal:toggle-dashboard-menu", handleToggle);
+  }, []);
 
   const normalize = (value) => (value || "").trim().toLowerCase();
   const scopedAllApps = user?.role === "institution_coordinator"
@@ -88,28 +120,10 @@ export default function AuthorityDashboard() {
     );
   });
 
-  const localRejectedByMeApps = scopedAllApps.filter((app) => {
-    const reviews = app.data?.reviews || [];
-    const data = app.data || {};
-    const strictMatch = reviews.some(
-      (review) =>
-        review?.action === "reject" &&
-        review?.reviewer_id !== undefined &&
-        review?.reviewer_id !== null &&
-        String(review.reviewer_id) === String(user?.id)
-    );
-    if (strictMatch) return true;
-    return reviews.some(
-      (review) =>
-        review?.action === "reject" &&
-        review?.role === user?.role &&
-        (review?.reviewer_id === undefined || review?.reviewer_id === null)
-    ) || (app.status === "rejected" && data?.last_reject_role === user?.role);
-  });
-
   const mergeById = (primary, fallback) => {
     const map = new Map();
-    [...primary, ...fallback].forEach((app) => {
+    // Keep primary API records authoritative; fallback fills only missing IDs.
+    [...fallback, ...primary].forEach((app) => {
       if (app && app.id !== undefined && app.id !== null) {
         map.set(app.id, app);
       }
@@ -118,8 +132,7 @@ export default function AuthorityDashboard() {
   };
 
   const approvedByMeApps = mergeById(myApprovedApps, localApprovedByMeApps);
-  const rejectedByMeApps = mergeById(myRejectedApps, localRejectedByMeApps);
-
+  const rejectedAppsCount = scopedAllApps.filter((app) => app.status === "rejected").length;
   const review = async (id, action) => {
     setMessage("");
     try {
@@ -148,8 +161,12 @@ export default function AuthorityDashboard() {
     }
   };
 
-  const exportApprovedApplicationsPdf = () => {
-    const approvedRows = approvedByMeApps.filter((app) => app.status === "approved");
+  const exportApprovedApplicationsPdf = async () => {
+    const liveAll = await fetchAll().catch(() => scopedAllApps);
+    setAllApps(liveAll);
+    const approvedRows = (Array.isArray(liveAll) ? liveAll : []).filter((app) => app.status === "approved");
+    const studentApproved = approvedRows.filter((app) => app.application_type === "student");
+    const facultyApproved = approvedRows.filter((app) => app.application_type === "faculty");
     const escapeHtml = (value) =>
       String(value ?? "-")
         .replace(/&/g, "&amp;")
@@ -157,55 +174,53 @@ export default function AuthorityDashboard() {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
+    const amountAsNumber = (app) => {
+      const amount = Number(getInstitutionCoordinatorApprovedAmount(app));
+      return Number.isFinite(amount) ? amount : 0;
+    };
+    const formatAmount = (value) => Number(value || 0).toFixed(2);
+    const studentTotal = studentApproved.reduce((sum, app) => sum + amountAsNumber(app), 0);
+    const facultyTotal = facultyApproved.reduce((sum, app) => sum + amountAsNumber(app), 0);
+    const grandTotal = studentTotal + facultyTotal;
 
-    const studentRowsHtml = approvedRows
-      .filter((app) => app.application_type === "student")
-      .map((app) => {
+    const studentRowsHtml = studentApproved
+      .map((app, index) => {
         const data = app.data || {};
         const name = data.applicant_name || data.application_name || "-";
-        const email = data.email || "-";
+        const contactNumber = data.mobile_number || "-";
         const department = data.department || "-";
-        const status = app.status || "-";
-        const amount = data.approved_amount ?? "-";
-        const approvedAt = data.approved_at || "-";
-        const bankAccount = data.bank_account_number || "-";
-        const bankIfsc = data.bank_ifsc || "-";
-        const bankBranch = data.bank_branch || "-";
-        const bankName = data.bank_name || "-";
+        const accountNumber = data.bank_account_number || "-";
+        const ifsc = data.bank_ifsc || "-";
+        const bankNameAndBranch = [data.bank_name || "-", data.bank_branch || "-"].join(" / ");
+        const amount = getInstitutionCoordinatorApprovedAmount(app);
         return `<tr>
-          <td>${escapeHtml(app.id)}</td>
+          <td>${escapeHtml(index + 1)}</td>
           <td>${escapeHtml(name)}</td>
-          <td>${escapeHtml(email)}</td>
+          <td>${escapeHtml(contactNumber)}</td>
           <td>${escapeHtml(department)}</td>
-          <td>${escapeHtml(status)}</td>
+          <td>${escapeHtml(accountNumber)}</td>
+          <td>${escapeHtml(ifsc)}</td>
+          <td>${escapeHtml(bankNameAndBranch)}</td>
           <td>${escapeHtml(amount)}</td>
-          <td>${escapeHtml(bankAccount)}</td>
-          <td>${escapeHtml(bankIfsc)}</td>
-          <td>${escapeHtml(bankBranch)}</td>
-          <td>${escapeHtml(bankName)}</td>
-          <td>${escapeHtml(approvedAt)}</td>
         </tr>`;
       })
       .join("");
 
-    const facultyRowsHtml = approvedRows
-      .filter((app) => app.application_type === "faculty")
-      .map((app) => {
+    const facultyRowsHtml = facultyApproved
+      .map((app, index) => {
         const data = app.data || {};
-        const name = data.applicant_name || data.application_name || "-";
-        const email = data.email || "-";
+        const applicationName = data.application_name || data.applicant_name || "-";
+        const contactNumber = data.mobile_number || "-";
         const department = data.department || "-";
-        const status = app.status || "-";
-        const amount = data.approved_amount ?? "-";
-        const approvedAt = data.approved_at || "-";
+        const designation = data.designation || "-";
+        const amount = getInstitutionCoordinatorApprovedAmount(app);
         return `<tr>
-          <td>${escapeHtml(app.id)}</td>
-          <td>${escapeHtml(name)}</td>
-          <td>${escapeHtml(email)}</td>
+          <td>${escapeHtml(index + 1)}</td>
+          <td>${escapeHtml(applicationName)}</td>
+          <td>${escapeHtml(contactNumber)}</td>
           <td>${escapeHtml(department)}</td>
-          <td>${escapeHtml(status)}</td>
+          <td>${escapeHtml(designation)}</td>
           <td>${escapeHtml(amount)}</td>
-          <td>${escapeHtml(approvedAt)}</td>
         </tr>`;
       })
       .join("");
@@ -216,56 +231,67 @@ export default function AuthorityDashboard() {
     <meta charset="utf-8" />
     <title>Approved Applications Report</title>
     <style>
-      body { font-family: Arial, sans-serif; padding: 24px; }
+      body { font-family: "Times New Roman", Times, serif; font-size: 12px; padding: 24px; }
       h1 { margin-bottom: 4px; }
-      p { color: #444; margin-top: 0; }
+      p { color: #5a5146; margin-top: 0; font-size: 12px; }
       table { width: 100%; border-collapse: collapse; margin-top: 12px; margin-bottom: 18px; }
-      th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-      th { background: #f3f3f3; }
+      th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 12px; }
+      th { background: #f3f3f3; font-weight: 700; }
+      h1, h2 { font-size: 16px; font-weight: 700; }
       h2 { margin-top: 18px; margin-bottom: 8px; }
     </style>
   </head>
   <body>
     <h1>Approved Applications Report</h1>
     <p>Institution Coordinator - ${new Date().toLocaleString()}</p>
+    <p>
+      Student Applicants: ${escapeHtml(studentApproved.length)} |
+      Faculty Applicants: ${escapeHtml(facultyApproved.length)} |
+      Grand Total Amount (Rs): ${escapeHtml(formatAmount(grandTotal))}
+    </p>
     <h2>Student Applications</h2>
     <table>
       <thead>
         <tr>
-          <th>Application ID</th>
-          <th>Applicant</th>
-          <th>Email</th>
+          <th>Sr No</th>
+          <th>Applicant Name</th>
+          <th>Contact Number</th>
           <th>Department</th>
-          <th>Status</th>
+          <th>Account Number</th>
+          <th>IFSC Code</th>
+          <th>Bank Name And Branch</th>
           <th>Approved Amount</th>
-          <th>Bank Account</th>
-          <th>IFSC</th>
-          <th>Branch</th>
-          <th>Bank Name</th>
-          <th>Approved At</th>
         </tr>
       </thead>
       <tbody>
-        ${studentRowsHtml || '<tr><td colspan="10">No approved student applications.</td></tr>'}
+        ${studentRowsHtml || '<tr><td colspan="8">No approved student applications.</td></tr>'}
+        <tr>
+          <td colspan="7" style="text-align:right;font-weight:700">Student Total (Rs)</td>
+          <td style="font-weight:700">${escapeHtml(formatAmount(studentTotal))}</td>
+        </tr>
       </tbody>
     </table>
     <h2>Faculty Applications</h2>
     <table>
       <thead>
         <tr>
-          <th>Application ID</th>
-          <th>Applicant</th>
-          <th>Email</th>
+          <th>Sr No</th>
+          <th>Application Name</th>
+          <th>Contact Number</th>
           <th>Department</th>
-          <th>Status</th>
+          <th>Designation</th>
           <th>Approved Amount</th>
-          <th>Approved At</th>
         </tr>
       </thead>
       <tbody>
-        ${facultyRowsHtml || '<tr><td colspan="7">No approved faculty applications.</td></tr>'}
+        ${facultyRowsHtml || '<tr><td colspan="6">No approved faculty applications.</td></tr>'}
+        <tr>
+          <td colspan="5" style="text-align:right;font-weight:700">Faculty Total (Rs)</td>
+          <td style="font-weight:700">${escapeHtml(formatAmount(facultyTotal))}</td>
+        </tr>
       </tbody>
     </table>
+    <h2>Overall Total Amount (Rs): ${escapeHtml(formatAmount(grandTotal))}</h2>
   </body>
 </html>`;
 
@@ -283,12 +309,52 @@ export default function AuthorityDashboard() {
     setEditingDepartment(false);
   };
 
+  const deleteAccount = async () => {
+    if (!window.confirm("Delete your account permanently? This cannot be undone.")) return;
+    setDeleteMessage("");
+    setDeletingAccount(true);
+    try {
+      await api.deleteMe();
+      logout(setUser);
+    } catch (err) {
+      setDeleteMessage(err.message || "Unable to delete account right now.");
+    } finally {
+      setDeletingAccount(false);
+    }
+  };
+
   const handleSelect = (item) => {
     if (item === "Logout") {
       logout(setUser);
       return;
     }
     setActive(item);
+  };
+
+  const submitNotice = async (e) => {
+    e.preventDefault();
+    setNoticeMessage("");
+    try {
+      const title = noticeTitle.trim();
+      if (!title) {
+        setNoticeMessage("Notice title is required.");
+        return;
+      }
+      if (!noticeFile) {
+        setNoticeMessage("Notice file is required.");
+        return;
+      }
+      const data = new FormData();
+      data.append("title", title);
+      data.append("notice_file", noticeFile);
+      await api.createNotice(data);
+      setNoticeTitle("");
+      setNoticeFile(null);
+      setNoticeMessage("Notice uploaded.");
+      await refresh();
+    } catch (err) {
+      setNoticeMessage(err.message);
+    }
   };
 
   const docLink = (path) => {
@@ -302,29 +368,20 @@ export default function AuthorityDashboard() {
   };
 
   return (
-    <div className="min-h-screen px-3 py-4 sm:px-4 sm:py-6 md:px-8 md:py-8 lg:h-screen lg:overflow-hidden lg:px-10">
-      <div className="mb-4 flex items-center justify-between lg:hidden">
-        <div>
-          <div className="text-xs uppercase tracking-[0.3em] text-black/40">Engineering</div>
-          <div className="text-lg font-semibold font-display">Incentive Portal</div>
+    <div className="min-h-screen px-3 py-4 sm:px-4 sm:py-6 md:px-8 md:py-8 lg:min-h-screen lg:px-10">
+      <div className="mx-auto w-full max-w-7xl lg:max-w-none">
+        <div className="mb-4 md:hidden">
+          <div>
+            <div className="text-xs uppercase tracking-[0.3em] text-black/40">Engineering</div>
+            <div className="text-lg font-semibold font-display">Incentive Portal</div>
+          </div>
         </div>
-        <button
-          className="btn btn-ghost"
-          onClick={() => setSidebarOpen(true)}
-          aria-label="Open menu"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-          Menu
-        </button>
-      </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:h-[calc(100vh-4rem)] lg:grid-cols-[280px_minmax(0,1fr)]">
-        <div className="hidden lg:sticky lg:top-0 lg:block lg:h-full">
-          <Sidebar items={menu} active={active} onSelect={handleSelect} />
-        </div>
-        <div className="card h-full min-h-0 overflow-y-auto p-6 md:p-8">
+        <div className="grid grid-cols-1 gap-6 md:min-h-[calc(100vh-6rem)] md:grid-cols-[280px_minmax(0,1fr)] md:items-start md:overflow-hidden">
+          <div className="hidden md:sticky md:top-24 md:block md:h-[calc(100vh-8rem)] md:self-start md:overflow-y-auto">
+            <Sidebar items={menu} active={active} onSelect={handleSelect} user={user} />
+          </div>
+          <div className="card p-6 md:h-[calc(100vh-6rem)] md:overflow-y-auto md:p-8">
           <Topbar title={`Authority Dashboard`} subtitle={`Hello ${user?.name || ""}`} />
           {active === "Dashboard" && (
             <div className="mt-6">
@@ -364,7 +421,7 @@ export default function AuthorityDashboard() {
                     { label: "Pending", value: apps.length },
                     { label: "Total", value: scopedAllApps.length },
                     { label: "My Approved", value: approvedByMeApps.length },
-                    { label: "My Rejected", value: rejectedByMeApps.length }
+                    { label: "Rejected", value: rejectedAppsCount }
                   ].map((item) => (
                     <div key={item.label} className="rounded-2xl border border-black/10 bg-white/70 p-4">
                       <div className="flex items-center justify-between text-sm font-semibold">
@@ -407,6 +464,7 @@ export default function AuthorityDashboard() {
                     </div>
                     <div className="muted mt-2 text-xs">ID: {app.id}</div>
                     <div className="mt-4 grid gap-3 text-sm text-black/70 md:grid-cols-2">
+                      <div><span className="text-black/50">Application Type:</span> {app.application_type || "-"}</div>
                       <div><span className="text-black/50">Applicant Name:</span> {app.data.applicant_name || app.data.application_name || "-"}</div>
                       <div><span className="text-black/50">Department:</span> {app.data.department || "-"}</div>
                       <div><span className="text-black/50">USN:</span> {app.data.usn || "-"}</div>
@@ -425,6 +483,11 @@ export default function AuthorityDashboard() {
                       <div><span className="text-black/50">Credits:</span> {app.data.course_credits ?? "-"}</div>
                       <div><span className="text-black/50">Fee Paid:</span> {app.data.registration_fee_paid ?? "-"}</div>
                       <div><span className="text-black/50">Permissible Claim:</span> {app.data.permissible_claim ?? "-"}</div>
+                      <div><span className="text-black/50">Bank Account Number:</span> {app.data.bank_account_number || "-"}</div>
+                      <div><span className="text-black/50">Bank IFSC:</span> {app.data.bank_ifsc || "-"}</div>
+                      <div><span className="text-black/50">Bank Branch:</span> {app.data.bank_branch || "-"}</div>
+                      <div><span className="text-black/50">Bank Name:</span> {app.data.bank_name || "-"}</div>
+                      <div><span className="text-black/50">Declaration Accepted:</span> {app.data.declaration_accepted ? "Yes" : "No"}</div>
                       <div><span className="text-black/50">Fee Receipt:</span> {docLink(app.data.fee_receipt_file)}</div>
                       <div><span className="text-black/50">Certificate:</span> {docLink(app.data.certificate_file)}</div>
                       <div><span className="text-black/50">Bank Passbook:</span> {docLink(app.data.bank_passbook_file)}</div>
@@ -468,11 +531,14 @@ export default function AuthorityDashboard() {
             <div className="mt-8">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-xl font-semibold font-display">My Approved Applications</h2>
-                {user?.role === "institution_coordinator" && (
-                  <button className="btn btn-ghost" type="button" onClick={exportApprovedApplicationsPdf}>
-                    Export PDF
-                  </button>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button className="btn btn-ghost" type="button" onClick={refreshApprovedOnly}>Refresh</button>
+                  {user?.role === "institution_coordinator" && (
+                    <button className="btn btn-ghost" type="button" onClick={exportApprovedApplicationsPdf}>
+                      Export PDF
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="mt-4 grid gap-4">
                 {approvedByMeApps.map((app) => (
@@ -487,7 +553,7 @@ export default function AuthorityDashboard() {
                     </div>
                     {user?.role === "institution_coordinator" && (
                       <div className="mt-2 text-sm text-black/70">
-                        <span className="text-black/50">Approved Amount:</span> {app.data?.approved_amount ?? "-"}
+                        <span className="text-black/50">Approved Amount:</span> {getInstitutionCoordinatorApprovedAmount(app)}
                       </div>
                     )}
                   </div>
@@ -498,55 +564,6 @@ export default function AuthorityDashboard() {
               </div>
             </div>
           )}
-
-          {active === "My Rejected Applications" && (
-            <div className="mt-8">
-              <h2 className="text-xl font-semibold font-display">My Rejected Applications</h2>
-              <div className="mt-4 grid gap-4">
-                {rejectedByMeApps.map((app) => {
-                  const reviews = app.data?.reviews || [];
-                  const myReject =
-                    reviews
-                      .filter(
-                        (r) =>
-                          r.action === "reject" &&
-                          r.reviewer_id !== undefined &&
-                          r.reviewer_id !== null &&
-                          String(r.reviewer_id) === String(user?.id)
-                      )
-                      .slice(-1)[0] ||
-                    reviews
-                      .filter(
-                        (r) =>
-                          r.action === "reject" &&
-                          r.role === user?.role &&
-                          (r.reviewer_id === undefined || r.reviewer_id === null)
-                      )
-                      .slice(-1)[0];
-                  const remark = myReject?.remark || app.data?.last_reject_remark || "-";
-                  return (
-                    <div key={app.id} className="panel p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="font-semibold">{app.data.applicant_name || app.data.application_name || "-"}</div>
-                        <span className="badge">{app.status}</span>
-                      </div>
-                      <div className="muted mt-2 text-xs">ID: {app.id}</div>
-                      <div className="mt-3 text-sm text-black/70">
-                        <span className="text-black/50">Department:</span> {app.data.department || "-"}
-                      </div>
-                      <div className="mt-3 text-sm text-black/70">
-                        <span className="text-black/50">Remark:</span> {remark}
-                      </div>
-                    </div>
-                  );
-                })}
-                {rejectedByMeApps.length === 0 && (
-                  <div className="muted text-sm">No applications found with your rejection record.</div>
-                )}
-              </div>
-            </div>
-          )}
-
 
           {active === "Total Applications" && (
             <div className="mt-8">
@@ -566,6 +583,58 @@ export default function AuthorityDashboard() {
                 ))}
                 {scopedAllApps.length === 0 && (
                   <div className="muted text-sm">No applications.</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {active === "Notice" && user?.role === "institution_coordinator" && (
+            <div className="mt-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold font-display">Notice</h2>
+                <button className="btn btn-ghost" type="button" onClick={refresh}>Refresh</button>
+              </div>
+              <div className="mt-4 panel p-4">
+                <form onSubmit={submitNotice} className="space-y-4">
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-black/40">Notice Title</label>
+                    <input
+                      className="input mt-2"
+                      value={noticeTitle}
+                      onChange={(e) => setNoticeTitle(e.target.value)}
+                      placeholder="Enter notice title"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-black/40">Notice File</label>
+                    <input
+                      className="input mt-2"
+                      type="file"
+                      onChange={(e) => setNoticeFile(e.target.files?.[0] || null)}
+                      required
+                    />
+                    {noticeFile && <div className="muted mt-1 text-xs">{noticeFile.name}</div>}
+                  </div>
+                  <button className="btn btn-primary" type="submit">Submit Notice</button>
+                </form>
+                {noticeMessage && <div className="mt-3 text-sm text-emerald-700">{noticeMessage}</div>}
+              </div>
+
+              <div className="mt-4 grid gap-4">
+                {notices.map((notice) => (
+                  <div key={notice.id} className="panel p-4">
+                    <div className="font-semibold">{notice.title}</div>
+                    <div className="muted mt-1 text-xs">
+                      {new Date(notice.created_at).toLocaleString()}
+                    </div>
+                    <div className="mt-2 text-sm">
+                      {docLink(notice.file_path)}
+                    </div>
+                  </div>
+                ))}
+                {notices.length === 0 && (
+                  <div className="muted text-sm">No notices uploaded.</div>
                 )}
               </div>
             </div>
@@ -635,6 +704,26 @@ export default function AuthorityDashboard() {
             </div>
           )}
 
+          {active === "Delete Account" && (
+            <div className="mt-8">
+              <h2 className="text-xl font-semibold font-display text-rose-700">Delete Account</h2>
+              <p className="mt-2 text-sm text-black/70">
+                This permanently deletes your account and related records. This action cannot be undone.
+              </p>
+              <div className="mt-4 panel border-rose-300/70 bg-rose-50 p-4">
+                <button
+                  className="btn btn-primary bg-rose-600 hover:bg-rose-700 disabled:opacity-60"
+                  type="button"
+                  onClick={deleteAccount}
+                  disabled={deletingAccount}
+                >
+                  {deletingAccount ? "Deleting..." : "Delete My Account"}
+                </button>
+                {deleteMessage && <div className="mt-3 text-sm text-rose-700">{deleteMessage}</div>}
+              </div>
+            </div>
+          )}
+
           {active === "Logout" && (
             <div className="mt-8">
               <h2 className="text-xl font-semibold font-display">Logout</h2>
@@ -644,15 +733,16 @@ export default function AuthorityDashboard() {
           )}
         </div>
       </div>
+      </div>
 
       {sidebarOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
+        <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-4 right-4 top-6">
             <div className="card p-4">
               <div className="flex items-center justify-between">
                 <div className="text-lg font-semibold font-display">Menu</div>
-                <button className="btn btn-ghost" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
+                <button className="btn btn-ghost" onClick={() => setSidebarOpen(false)} aria-label="Close menu" type="button">
                   Close
                 </button>
               </div>
@@ -664,6 +754,7 @@ export default function AuthorityDashboard() {
                     handleSelect(item);
                     setSidebarOpen(false);
                   }}
+                  user={user}
                 />
               </div>
             </div>
