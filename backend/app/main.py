@@ -6,7 +6,7 @@ from sqlalchemy import text
 from app.core.database import Base, engine, SessionLocal
 from app.core.config import settings
 from app.core.rate_limit import RateLimitMiddleware
-from app.routers import auth, applications, notifications, profile, health, admin, notices
+from app.routers import auth, applications, notifications, profile, health, admin, notices, feedback
 
 Base.metadata.create_all(bind=engine)
 
@@ -16,6 +16,8 @@ def _apply_runtime_schema_updates() -> None:
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE applications ALTER COLUMN status TYPE VARCHAR(64)"))
         conn.execute(text("ALTER TABLE applications ADD COLUMN IF NOT EXISTS approved_amount DOUBLE PRECISION"))
+        conn.execute(text("ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS benefit_status VARCHAR(32)"))
+        conn.execute(text("UPDATE feedbacks SET benefit_status = 'beneficial' WHERE benefit_status IS NULL"))
 
 
 _apply_runtime_schema_updates()
@@ -53,6 +55,7 @@ app.include_router(auth.router)
 app.include_router(applications.router)
 app.include_router(notifications.router)
 app.include_router(notices.router)
+app.include_router(feedback.router)
 app.include_router(profile.router)
 app.include_router(health.router)
 app.include_router(admin.router)

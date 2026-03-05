@@ -14,5 +14,6 @@ class User(Base):
 
     applications = relationship("Application", back_populates="owner")
     notifications = relationship("Notification", back_populates="user")
+    feedbacks = relationship("Feedback", back_populates="user")
     login_events = relationship("LoginEvent")
     password_reset_requests = relationship("PasswordResetRequest")

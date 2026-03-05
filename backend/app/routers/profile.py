@@ -10,6 +10,7 @@ from app.models.application import Application
 from app.models.login_event import LoginEvent
 from app.models.password_reset import PasswordResetRequest
 from app.models.notification import Notification
+from app.models.feedback import Feedback
 from app.schemas.user import UserUpdate, UserOut
 
 router = APIRouter(prefix="/profile", tags=["profile"])
@@ -60,6 +61,7 @@ def update_me(payload: UserUpdate, db: Session = Depends(get_db), user: User = D
 @router.delete("/me")
 def delete_me(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     db.query(Notification).filter(Notification.user_id == user.id).delete()
+    db.query(Feedback).filter(Feedback.user_id == user.id).delete()
     db.query(LoginEvent).filter(LoginEvent.user_id == user.id).delete()
     db.query(PasswordResetRequest).filter(PasswordResetRequest.user_id == user.id).delete()
     db.query(Application).filter(Application.owner_id == user.id).delete()

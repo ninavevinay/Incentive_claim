@@ -11,6 +11,7 @@ const baseMenu = [
   "Pending Applications",
   "My Approved Applications",
   "Total Applications",
+  "Feedback",
   "Profile",
   "Delete Account",
   "Logout"
@@ -30,6 +31,10 @@ export default function AuthorityDashboard() {
   const [apps, setApps] = useState([]);
   const [allApps, setAllApps] = useState([]);
   const [myApprovedApps, setMyApprovedApps] = useState([]);
+  const [feedbackList, setFeedbackList] = useState([]);
+  const [feedbackForm, setFeedbackForm] = useState({ benefit_status: "beneficial", rating: "5", message: "" });
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackType, setFeedbackType] = useState("success");
   const [notices, setNotices] = useState([]);
   const [noticeTitle, setNoticeTitle] = useState("");
   const [noticeFile, setNoticeFile] = useState(null);
@@ -42,7 +47,7 @@ export default function AuthorityDashboard() {
   const [rejectRemarks, setRejectRemarks] = useState({});
   const [approveAmounts, setApproveAmounts] = useState({});
   const menu = user?.role === "institution_coordinator"
-    ? [...baseMenu.slice(0, 5), "Notice", ...baseMenu.slice(5)]
+    ? [...baseMenu.slice(0, 4), "Notice", ...baseMenu.slice(4)]
     : baseMenu;
 
   const scopedDepartment = user?.role === "institution_coordinator" ? "" : (user?.department || "");
@@ -54,6 +59,7 @@ export default function AuthorityDashboard() {
     fetchPending().then(setApps).catch(() => setApps([]));
     fetchAll().then(setAllApps).catch(() => setAllApps([]));
     api.myReviewedApplications("approve").then(setMyApprovedApps).catch(() => setMyApprovedApps([]));
+    api.myFeedback().then(setFeedbackList).catch(() => setFeedbackList([]));
     api.publicNotices().then(setNotices).catch(() => setNotices([]));
     const interval = setInterval(() => {
       fetchPending().then(setApps).catch(() => setApps([]));
@@ -75,6 +81,11 @@ export default function AuthorityDashboard() {
     setNotices(await api.publicNotices().catch(() => []));
   };
 
+  const loadFeedback = async () => {
+    const mine = await api.myFeedback().catch(() => []);
+    setFeedbackList(mine);
+  };
+
   const refreshApprovedOnly = async () => {
     setMyApprovedApps(await api.myReviewedApplications("approve").catch(() => []));
   };
@@ -88,6 +99,9 @@ export default function AuthorityDashboard() {
   useEffect(() => {
     if (active === "My Approved Applications") {
       refreshApprovedOnly();
+    }
+    if (active === "Feedback") {
+      loadFeedback();
     }
   }, [active]);
 
@@ -357,6 +371,30 @@ export default function AuthorityDashboard() {
     }
   };
 
+  const submitFeedback = async (e) => {
+    e.preventDefault();
+    setFeedbackMessage("");
+    if (feedbackList.length > 0) {
+      setFeedbackType("error");
+      setFeedbackMessage("Feedback can only be submitted once.");
+      return;
+    }
+    try {
+      await api.submitFeedback({
+        benefit_status: feedbackForm.benefit_status,
+        message: feedbackForm.message.trim(),
+        rating: feedbackForm.rating ? Number(feedbackForm.rating) : null
+      });
+      setFeedbackType("success");
+      setFeedbackMessage("Feedback submitted. Thank you.");
+      setFeedbackForm({ benefit_status: "beneficial", rating: "5", message: "" });
+      await loadFeedback();
+    } catch (err) {
+      setFeedbackType("error");
+      setFeedbackMessage(err.message || "Unable to submit feedback right now.");
+    }
+  };
+
   const docLink = (path) => {
     if (!path) return "-";
     const href = path.startsWith("http") ? path : `${API_URL}${path}`;
@@ -370,18 +408,18 @@ export default function AuthorityDashboard() {
   return (
     <div className="min-h-screen px-3 py-4 sm:px-4 sm:py-6 md:px-8 md:py-8 lg:min-h-screen lg:px-10">
       <div className="mx-auto w-full max-w-7xl lg:max-w-none">
-        <div className="mb-4 md:hidden">
+        <div className="mb-4 lg:hidden">
           <div>
             <div className="text-xs uppercase tracking-[0.3em] text-black/40">Engineering</div>
             <div className="text-lg font-semibold font-display">Incentive Portal</div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:min-h-[calc(100vh-6rem)] md:grid-cols-[280px_minmax(0,1fr)] md:items-start md:overflow-hidden">
-          <div className="hidden md:sticky md:top-24 md:block md:h-[calc(100vh-8rem)] md:self-start md:overflow-y-auto">
+        <div className="dashboard-shell">
+          <div className="dashboard-sidebar">
             <Sidebar items={menu} active={active} onSelect={handleSelect} user={user} />
           </div>
-          <div className="card p-6 md:h-[calc(100vh-6rem)] md:overflow-y-auto md:p-8">
+          <div className="card dashboard-content">
           <Topbar title={`Authority Dashboard`} subtitle={`Hello ${user?.name || ""}`} />
           {active === "Dashboard" && (
             <div className="mt-6">
@@ -640,6 +678,88 @@ export default function AuthorityDashboard() {
             </div>
           )}
 
+          {active === "Feedback" && (
+            <div className="mt-8">
+              <h2 className="text-xl font-semibold font-display">Feedback</h2>
+              <p className="muted mt-2 text-sm">Share your experience so we can improve the review workflow.</p>
+              <div className="mt-4 panel p-4">
+                {feedbackList.length > 0 && (
+                  <div className="mb-3 rounded-xl border border-emerald-300/60 bg-emerald-50/80 px-3 py-2 text-sm text-emerald-800">
+                    You already submitted feedback. Only one submission is allowed.
+                  </div>
+                )}
+                <form onSubmit={submitFeedback} className="space-y-4">
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-black/40">
+                      Is this website beneficial?
+                    </label>
+                    <select
+                      className="input mt-2"
+                      value={feedbackForm.benefit_status}
+                      onChange={(e) => setFeedbackForm((prev) => ({ ...prev, benefit_status: e.target.value }))}
+                    >
+                      <option value="beneficial">Yes, beneficial</option>
+                      <option value="partially_beneficial">Partially beneficial</option>
+                      <option value="not_beneficial">Not beneficial</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-black/40">Rating</label>
+                    <select
+                      className="input mt-2"
+                      value={feedbackForm.rating}
+                      onChange={(e) => setFeedbackForm((prev) => ({ ...prev, rating: e.target.value }))}
+                    >
+                      <option value="5">5 - Excellent</option>
+                      <option value="4">4 - Good</option>
+                      <option value="3">3 - Average</option>
+                      <option value="2">2 - Poor</option>
+                      <option value="1">1 - Very Poor</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-black/40">Message</label>
+                    <textarea
+                      className="input mt-2 h-28"
+                      value={feedbackForm.message}
+                      onChange={(e) => setFeedbackForm((prev) => ({ ...prev, message: e.target.value }))}
+                      placeholder="Write your feedback..."
+                      required
+                    />
+                  </div>
+                  <button className="btn btn-primary" type="submit" disabled={feedbackList.length > 0}>
+                    {feedbackList.length > 0 ? "Submitted" : "Submit Feedback"}
+                  </button>
+                </form>
+                {feedbackMessage && (
+                  <div className={`mt-3 text-sm ${feedbackType === "error" ? "text-rose-600" : "text-emerald-600"}`}>
+                    {feedbackMessage}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {feedbackList.map((item) => (
+                  <div key={item.id} className="panel p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs uppercase tracking-[0.2em] text-black/50">
+                        Website Benefit: {String(item.benefit_status || "beneficial").replace(/_/g, " ")}
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm font-semibold">Rating: {item.rating ?? "-"}/5</div>
+                      <div className="muted text-xs">{new Date(item.created_at).toLocaleString()}</div>
+                    </div>
+                    <div className="mt-2 text-sm text-black/80">{item.message}</div>
+                  </div>
+                ))}
+                {feedbackList.length === 0 && (
+                  <div className="muted text-sm">No feedback submitted yet.</div>
+                )}
+              </div>
+            </div>
+          )}
+
           {active === "Profile" && (
             <div className="mt-8">
               <h2 className="text-xl font-semibold font-display">Profile</h2>
@@ -736,7 +856,7 @@ export default function AuthorityDashboard() {
       </div>
 
       {sidebarOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
+        <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-4 right-4 top-6">
             <div className="card p-4">

@@ -35,26 +35,38 @@ export default function Login() {
 
   return (
     <div className="min-h-screen px-3 py-6 sm:px-4 md:px-8 md:py-10 lg:px-10">
-      <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-6 lg:grid-cols-[1.1fr_1fr]">
+      <div className="auth-shell">
         <section className="card p-6 md:p-10">
-          <div className="badge">Incentive Portal</div>
-          <h1 className="mt-6 text-3xl font-semibold font-display sm:text-4xl">Welcome back.</h1>
+          <div className="badge">Claim Portal</div>
+          <h1 className="mt-6 text-3xl font-semibold font-display sm:text-4xl">Incentive Claim Management</h1>
           <p className="muted mt-3 text-sm">
-            Track your submissions, review status updates, and manage incentive claims in one place.
+            Submit, track, and manage reimbursement claims with one secure workflow for students, faculty, and authorities.
           </p>
-          <div className="mt-8 grid gap-4 sm:grid-cols-2">
-            <div className="panel p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Fast Review</div>
-              <p className="mt-2 text-sm">Applications routed to the right reviewer automatically.</p>
+          <div className="mt-8 grid gap-4 sm:grid-cols-3">
+            <div className="kpi">
+              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Workflow</div>
+              <div className="kpi-value">3-Step</div>
+              <p className="mt-1 text-xs text-black/60">Coordinator to HOD to Institution</p>
             </div>
-            <div className="panel p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Live Updates</div>
-              <p className="mt-2 text-sm">Get notifications when status changes.</p>
+            <div className="kpi">
+              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Notifications</div>
+              <div className="kpi-value">Real-time</div>
+              <p className="mt-1 text-xs text-black/60">Status updates at every action</p>
+            </div>
+            <div className="kpi">
+              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Records</div>
+              <div className="kpi-value">Central</div>
+              <p className="mt-1 text-xs text-black/60">All claims in one secure dashboard</p>
             </div>
           </div>
-          <div className="mt-8 rounded-2xl border border-black/10 bg-white/70 p-4">
-            <div className="text-sm font-semibold">Secure access</div>
-            <p className="muted mt-1 text-sm">All data is encrypted and stored in the campus system.</p>
+          <div className="mt-8 panel p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="claim-pill">Submit</span>
+              <span className="claim-pill">Review</span>
+              <span className="claim-pill">Approve</span>
+              <span className="claim-pill">Disburse</span>
+            </div>
+            <p className="muted mt-3 text-sm">All records are encrypted and stored in the campus system.</p>
           </div>
           <div className="mt-4 rounded-2xl border border-black/10 bg-white/70 p-4">
             <div className="text-sm font-semibold">Notices</div>
@@ -81,8 +93,8 @@ export default function Login() {
         </section>
 
         <section className="card p-6 md:p-10">
-          <div className="text-xs uppercase tracking-[0.2em] text-black/40">Sign In</div>
-          <h2 className="mt-4 text-2xl font-semibold font-display sm:text-3xl">Login to your account</h2>
+          <div className="section-eyebrow">Claim Access</div>
+          <h2 className="section-head">Login to your account</h2>
           <form onSubmit={submit} className="mt-8 space-y-4">
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-black/40">Email</label>
@@ -93,7 +105,7 @@ export default function Login() {
               <input className="input mt-2" type="password" required placeholder="********" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
             </div>
             {error && <div className="text-rose-600 text-sm">{error}</div>}
-            <button className="btn btn-primary w-full" type="submit">Login</button>
+            <button className="btn btn-primary w-full" type="submit">Access Portal</button>
           </form>
           <p className="mt-6 text-sm text-black/60">
             No account? <Link className="text-black underline" to="/register">Register</Link>

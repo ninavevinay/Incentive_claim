@@ -9,6 +9,7 @@ from app.models.form_window import FormWindow
 from app.models.login_event import LoginEvent
 from app.models.password_reset import PasswordResetRequest
 from app.models.notification import Notification
+from app.models.feedback import Feedback
 from app.schemas.admin import (
     AdminUserOut,
     LoginEventOut,
@@ -17,6 +18,7 @@ from app.schemas.admin import (
     AdminCreateAuthorityUser,
     AdminFormWindowOut,
     AdminFormWindowUpdate,
+    AdminFeedbackOut,
 )
 from app.schemas.application import ApplicationOut
 from app.core.security import hash_password
@@ -83,6 +85,16 @@ def list_login_events(
 ):
     require_admin(user)
     return db.query(LoginEvent).order_by(LoginEvent.created_at.desc()).limit(limit).all()
+
+
+@router.get("/feedback", response_model=list[AdminFeedbackOut])
+def list_feedback(
+    limit: int = Query(default=500, ge=1, le=2000),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    require_admin(user)
+    return db.query(Feedback).order_by(Feedback.created_at.desc()).limit(limit).all()
 
 
 @router.get("/password-resets", response_model=list[PasswordResetOut])
@@ -201,6 +213,7 @@ def admin_delete_user(
     if target.role == "admin" and target.id == user.id:
         raise HTTPException(status_code=400, detail="Cannot delete your own admin account")
     db.query(Notification).filter(Notification.user_id == user_id).delete()
+    db.query(Feedback).filter(Feedback.user_id == user_id).delete()
     db.query(LoginEvent).filter(LoginEvent.user_id == user_id).delete()
     db.query(PasswordResetRequest).filter(PasswordResetRequest.user_id == user_id).delete()
     db.query(Application).filter(Application.owner_id == user_id).delete()

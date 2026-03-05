@@ -26,28 +26,34 @@ export default function AdminRegister() {
 
   return (
     <div className="min-h-screen px-3 py-6 sm:px-4 md:px-8 md:py-10 lg:px-10">
-      <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-6 lg:grid-cols-[1.1fr_1fr]">
+      <div className="auth-shell">
         <section className="card p-6 md:p-10">
-          <div className="badge">Incentive Portal</div>
+          <div className="badge">Claim Portal</div>
           <h1 className="mt-6 text-3xl font-semibold font-display sm:text-4xl">Admin access registration.</h1>
           <p className="muted mt-3 text-sm">
             Create an administrative account to manage users, applications, and login activity.
           </p>
-          <div className="mt-8 space-y-4">
-            <div className="panel p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Full Visibility</div>
-              <p className="mt-2 text-sm">View users, applications, and security events.</p>
+          <div className="mt-8 grid gap-4 sm:grid-cols-2">
+            <div className="kpi">
+              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Control</div>
+              <div className="kpi-value">Users</div>
+              <p className="mt-1 text-xs text-black/60">Manage accounts and authority roles</p>
             </div>
-            <div className="panel p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Audit Logs</div>
-              <p className="mt-2 text-sm">Track logins and password reset requests.</p>
+            <div className="kpi">
+              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Control</div>
+              <div className="kpi-value">Claims</div>
+              <p className="mt-1 text-xs text-black/60">View and monitor all submissions</p>
             </div>
+          </div>
+          <div className="mt-4 panel p-4">
+            <div className="text-xs uppercase tracking-[0.2em] text-black/40">Security</div>
+            <p className="mt-2 text-sm">Audit login events, form windows, and profile maintenance from one console.</p>
           </div>
         </section>
 
         <section className="card p-6 md:p-10">
-          <div className="text-xs uppercase tracking-[0.2em] text-black/40">Register</div>
-          <h2 className="mt-4 text-2xl font-semibold font-display sm:text-3xl">Create admin account</h2>
+          <div className="section-eyebrow">Admin Claim Access</div>
+          <h2 className="section-head">Create admin account</h2>
           <form onSubmit={submit} className="mt-8 space-y-4">
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-black/40">Full name</label>

@@ -26,16 +26,18 @@ const ADMIN_SECTIONS = [
   "Register Authority",
   "Registered Users",
   "Login Events",
+  "User Feedback",
   "All Applications",
   "Form Filling Window"
 ];
 
 export default function AdminDashboard() {
-  const { setUser } = useAuth();
+  const { user, setUser } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [users, setUsers] = useState([]);
   const [applications, setApplications] = useState([]);
   const [loginEvents, setLoginEvents] = useState([]);
+  const [feedbackEntries, setFeedbackEntries] = useState([]);
   const [error, setError] = useState("");
   const [passwordForm, setPasswordForm] = useState({ new_password: "" });
   const [passwordMessage, setPasswordMessage] = useState("");
@@ -43,6 +45,7 @@ export default function AdminDashboard() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [userFilter, setUserFilter] = useState("");
   const [applicationFilter, setApplicationFilter] = useState("");
+  const [feedbackFilter, setFeedbackFilter] = useState("");
   const [expandedAppId, setExpandedAppId] = useState(null);
   const [viewMode, setViewMode] = useState("list");
   const [activeSection, setActiveSection] = useState("Register Authority");
@@ -50,6 +53,8 @@ export default function AdminDashboard() {
   const [formWindowMessage, setFormWindowMessage] = useState("");
   const [applicationsMessage, setApplicationsMessage] = useState({ type: "", text: "" });
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [feedbackExporting, setFeedbackExporting] = useState(false);
+  const [feedbackExportMessage, setFeedbackExportMessage] = useState("");
   const [authorityForm, setAuthorityForm] = useState({
     name: "",
     email: "",
@@ -64,12 +69,14 @@ export default function AdminDashboard() {
       api.adminUsers(),
       api.adminApplications(),
       api.adminLoginEvents(),
+      api.adminFeedback(),
       api.adminFormWindow()
     ])
-      .then(([usersData, appsData, loginData, formWindowData]) => {
+      .then(([usersData, appsData, loginData, feedbackData, formWindowData]) => {
         setUsers(usersData);
         setApplications(appsData);
         setLoginEvents(loginData);
+        setFeedbackEntries(feedbackData);
         setFormWindowForm({
           start_date: formWindowData?.start_date || "",
           end_date: formWindowData?.end_date || ""
@@ -102,6 +109,11 @@ export default function AdminDashboard() {
       .join(" ")
       .toLowerCase();
     return value.includes(applicationFilter.trim().toLowerCase());
+  });
+
+  const filteredFeedback = feedbackEntries.filter((entry) => {
+    const value = `${entry.name} ${entry.email} ${entry.role} ${entry.department} ${entry.benefit_status ?? ""} ${entry.message} ${entry.rating ?? ""}`.toLowerCase();
+    return value.includes(feedbackFilter.trim().toLowerCase());
   });
 
   const sortedApplications = [...filteredApplications].sort((a, b) => a.id - b.id);
@@ -224,6 +236,107 @@ export default function AdminDashboard() {
     }
   };
 
+  const exportFeedbackPdf = async () => {
+    setFeedbackExportMessage("");
+    if (feedbackEntries.length === 0) {
+      setFeedbackExportMessage("No feedback available to export.");
+      return;
+    }
+
+    setFeedbackExporting(true);
+    try {
+      const { default: jsPDF } = await import("jspdf");
+      const autoTableModule = await import("jspdf-autotable");
+      const autoTable = autoTableModule.default || autoTableModule.autoTable;
+      const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+      const margin = 36;
+      const generatedAt = new Date();
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.text("User Feedback Report", margin, 42);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text(`Generated: ${generatedAt.toLocaleString()}`, margin, 58);
+      doc.text(`Total feedback entries: ${feedbackEntries.length}`, margin, 72);
+
+      const tableHead = [[
+        "Sr No",
+        "Name",
+        "Email",
+        "Role",
+        "Department",
+        "Benefit",
+        "Rating",
+        "Message",
+        "Time"
+      ]];
+
+      const tableBody = feedbackEntries.map((entry, index) => [
+        String(index + 1),
+        entry.name || "-",
+        entry.email || "-",
+        entry.role || "-",
+        entry.department || "-",
+        String(entry.benefit_status || "beneficial").replace(/_/g, " "),
+        entry.rating != null ? `${entry.rating}/5` : "-",
+        entry.message || "-",
+        entry.created_at ? new Date(entry.created_at).toLocaleString() : "-"
+      ]);
+
+      autoTable(doc, {
+        startY: 82,
+        margin: { left: margin, right: margin },
+        head: tableHead,
+        body: tableBody,
+        theme: "grid",
+        styles: {
+          font: "helvetica",
+          fontSize: 8,
+          cellPadding: 3,
+          valign: "top",
+          textColor: 30
+        },
+        headStyles: {
+          fillColor: [30, 30, 30],
+          textColor: 255,
+          fontStyle: "bold"
+        },
+        columnStyles: {
+          0: { cellWidth: 34, halign: "center" },
+          1: { cellWidth: 68 },
+          2: { cellWidth: 108 },
+          3: { cellWidth: 56 },
+          4: { cellWidth: 66 },
+          5: { cellWidth: 58 },
+          6: { cellWidth: 46, halign: "center" },
+          7: { cellWidth: 120 },
+          8: { cellWidth: 72 }
+        },
+        didDrawPage: (data) => {
+          const pageCount = doc.internal.getNumberOfPages();
+          doc.setFontSize(9);
+          doc.setTextColor(80);
+          doc.text(
+            `Page ${data.pageNumber} of ${pageCount}`,
+            doc.internal.pageSize.getWidth() - margin,
+            doc.internal.pageSize.getHeight() - 12,
+            { align: "right" }
+          );
+        }
+      });
+
+      const fileDate = new Date().toISOString().slice(0, 10);
+      doc.save(`user-feedback-${fileDate}.pdf`);
+      setFeedbackExportMessage("Feedback exported as PDF.");
+    } catch (err) {
+      setFeedbackExportMessage(err?.message || "Failed to export feedback PDF.");
+    } finally {
+      setFeedbackExporting(false);
+    }
+  };
+
   const selectSection = (section) => {
     setActiveSection(section);
     setViewMode("list");
@@ -234,17 +347,17 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen px-3 py-4 sm:px-4 sm:py-6 md:px-8 md:py-8 lg:min-h-screen lg:px-10">
       <div className="mx-auto w-full max-w-7xl lg:max-w-none">
-        <div className="mb-4 md:hidden">
+        <div className="mb-4 lg:hidden">
           <div>
             <div className="text-xs uppercase tracking-[0.3em] text-black/40">Admin</div>
             <div className="text-lg font-semibold font-display">System Control</div>
           </div>
         </div>
-        <div className="grid gap-6 md:min-h-[calc(100vh-6rem)] md:grid-cols-[220px_minmax(0,1fr)] md:items-start md:overflow-hidden">
-          <div className="hidden md:sticky md:top-24 md:block md:h-[calc(100vh-8rem)] md:self-start md:overflow-y-auto">
-            <Sidebar items={ADMIN_SECTIONS} active={activeSection} onSelect={selectSection} />
+        <div className="dashboard-shell" style={{ "--sidebar-width": "220px" }}>
+          <div className="dashboard-sidebar">
+            <Sidebar items={ADMIN_SECTIONS} active={activeSection} onSelect={selectSection} user={user} />
           </div>
-        <div className="card p-6 md:h-[calc(100vh-6rem)] md:overflow-y-auto md:p-8">
+        <div className="card dashboard-content">
         <div className="panel flex flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div>
             <div className="text-xs uppercase tracking-[0.2em] text-black/40">Admin Console</div>
@@ -365,7 +478,7 @@ export default function AdminDashboard() {
           </div>
 
           {activeSection === "Registered Users" && (
-          <div className="mt-6 panel flex h-[60vh] min-h-[320px] flex-col p-4">
+          <div className="mt-6 panel p-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold font-display">Registered Users</h2>
               <div className="muted text-sm">{users.length} total</div>
@@ -378,7 +491,7 @@ export default function AdminDashboard() {
                 onChange={(e) => setUserFilter(e.target.value)}
               />
             </div>
-            <div className="mt-4 flex-1 overflow-auto">
+            <div className="mt-4">
               <div className="grid gap-3 sm:hidden">
                 {filteredUsers.map((u) => (
                   <div key={u.id} className="panel p-3">
@@ -435,12 +548,12 @@ export default function AdminDashboard() {
         </section>
 
         {activeSection === "Login Events" && (
-        <section className="mt-10 panel flex h-[60vh] min-h-[320px] flex-col p-4">
+        <section className="mt-10 panel p-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold font-display">Login Events</h2>
             <div className="muted text-sm">{loginEvents.length} recent</div>
           </div>
-          <div className="mt-4 flex-1 overflow-auto">
+          <div className="mt-4">
             <div className="grid gap-3 sm:hidden">
               {loginEvents.map((e) => (
                 <div key={e.id} className="panel p-3">
@@ -472,6 +585,82 @@ export default function AdminDashboard() {
               </tbody>
             </table>
             {loginEvents.length === 0 && <div className="muted mt-3 text-sm">No login events.</div>}
+          </div>
+        </section>
+        )}
+
+        {activeSection === "User Feedback" && (
+        <section className="mt-10 panel p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-xl font-semibold font-display">User Feedback</h2>
+            <div className="flex items-center gap-2">
+              <button
+                className="btn btn-ghost"
+                type="button"
+                onClick={exportFeedbackPdf}
+                disabled={feedbackExporting}
+              >
+                {feedbackExporting ? "Exporting..." : "Export PDF"}
+              </button>
+              <div className="muted text-sm">{feedbackEntries.length} total</div>
+            </div>
+          </div>
+          <div className="mt-3">
+            <input
+              className="input"
+              placeholder="Search by user, role, benefit status, department, or feedback text"
+              value={feedbackFilter}
+              onChange={(e) => setFeedbackFilter(e.target.value)}
+            />
+          </div>
+          <div className="mt-4">
+            <div className="grid gap-3 sm:hidden">
+              {filteredFeedback.map((entry) => (
+                <div key={entry.id} className="panel p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold">{entry.name}</div>
+                    <div className="text-xs font-semibold text-black/70">Rating: {entry.rating ?? "-"}/5</div>
+                  </div>
+                  <div className="mt-1 text-xs text-black/60">{entry.email}</div>
+                  <div className="mt-1 text-xs text-black/60">{entry.role} - {entry.department}</div>
+                  <div className="mt-1 text-xs text-black/60">
+                    Benefit: {String(entry.benefit_status || "beneficial").replace(/_/g, " ")}
+                  </div>
+                  <div className="mt-2 text-sm text-black/80">{entry.message}</div>
+                  <div className="mt-2 text-xs text-black/50">{new Date(entry.created_at).toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+            <table className="hidden w-full text-left text-sm sm:table">
+              <thead>
+                <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
+                  <th className="py-2 pr-4">User</th>
+                  <th className="py-2 pr-4">Role</th>
+                  <th className="py-2 pr-4">Benefit</th>
+                  <th className="py-2 pr-4">Rating</th>
+                  <th className="py-2 pr-4">Message</th>
+                  <th className="py-2 pr-4">Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/10">
+                {filteredFeedback.map((entry) => (
+                  <tr key={entry.id}>
+                    <td className="py-3 pr-4">
+                      <div className="font-medium">{entry.name}</div>
+                      <div className="text-xs text-black/60">{entry.email}</div>
+                      <div className="text-xs text-black/60">{entry.department}</div>
+                    </td>
+                    <td className="py-3 pr-4">{entry.role}</td>
+                    <td className="py-3 pr-4">{String(entry.benefit_status || "beneficial").replace(/_/g, " ")}</td>
+                    <td className="py-3 pr-4">{entry.rating ?? "-"}/5</td>
+                    <td className="py-3 pr-4 max-w-[360px]">{entry.message}</td>
+                    <td className="py-3 pr-4">{new Date(entry.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filteredFeedback.length === 0 && <div className="muted mt-3 text-sm">No feedback found.</div>}
+            {feedbackExportMessage && <div className="mt-3 text-sm text-black/70">{feedbackExportMessage}</div>}
           </div>
         </section>
         )}
@@ -509,7 +698,7 @@ export default function AdminDashboard() {
         )}
 
         {activeSection === "All Applications" && (
-        <section className="mt-10 panel flex h-[60vh] min-h-[320px] flex-col p-4">
+        <section className="mt-10 panel p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-xl font-semibold font-display">All Applications</h2>
             <div className="flex flex-wrap items-center gap-2">
@@ -539,7 +728,7 @@ export default function AdminDashboard() {
               onChange={(e) => setApplicationFilter(e.target.value)}
             />
           </div>
-          <div className="mt-4 flex-1 overflow-auto">
+          <div className="mt-4">
             {viewMode === "details" && selectedApplication ? (
               <div className="panel p-4 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -699,7 +888,7 @@ export default function AdminDashboard() {
       </div>
 
       {sidebarOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
+        <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-4 right-4 top-6">
             <div className="card p-4">
@@ -713,6 +902,7 @@ export default function AdminDashboard() {
                 <Sidebar
                   items={ADMIN_SECTIONS}
                   active={activeSection}
+                  user={user}
                   onSelect={(section) => {
                     selectSection(section);
                     setSidebarOpen(false);

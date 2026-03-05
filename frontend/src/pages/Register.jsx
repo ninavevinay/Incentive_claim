@@ -26,28 +26,42 @@ export default function Register() {
 
   return (
     <div className="min-h-screen px-3 py-6 sm:px-4 md:px-8 md:py-10 lg:px-10">
-      <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-6 lg:grid-cols-[1.1fr_1fr]">
+      <div className="auth-shell">
         <section className="card p-6 md:p-10">
-          <div className="badge">Incentive Portal</div>
-          <h1 className="mt-6 text-3xl font-semibold font-display sm:text-4xl">Create your incentive profile.</h1>
-          <p className="muted mt-3 text-sm">Vision &amp; Mission</p>
-          <div className="mt-8 space-y-4">
-            <div className="panel p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Vision</div>
-              <p className="mt-2 text-sm">Emerge as a leading Institute for developing competent and creative Professionals.</p>
+          <div className="badge">Claim Portal</div>
+          <h1 className="mt-6 text-3xl font-semibold font-display sm:text-4xl">Create your incentive account</h1>
+          <p className="muted mt-3 text-sm">Start your claim journey with role-based access and guided forms.</p>
+          <div className="mt-8 grid gap-4 sm:grid-cols-3">
+            <div className="kpi">
+              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Step 1</div>
+              <div className="kpi-value">Profile</div>
+              <p className="mt-1 text-xs text-black/60">Create your verified account</p>
             </div>
-            <div className="panel p-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Mission</div>
-              <p className="mt-2 text-sm">Providing Quality Infrastructure and experienced faculty for academic excellence</p>
-              <p className="mt-2 text-sm">Inculcating skills, knowledge and opportunities for competency and creativity</p>
-              <p className="mt-2 text-sm">Aligning with Industries for knowledge sharing, research and development</p>
+            <div className="kpi">
+              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Step 2</div>
+              <div className="kpi-value">Submit</div>
+              <p className="mt-1 text-xs text-black/60">Upload course and fee documents</p>
+            </div>
+            <div className="kpi">
+              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Step 3</div>
+              <div className="kpi-value">Track</div>
+              <p className="mt-1 text-xs text-black/60">Follow approvals in real time</p>
+            </div>
+          </div>
+          <div className="mt-6 panel p-4">
+            <div className="text-xs uppercase tracking-[0.2em] text-black/40">Workflow</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="claim-pill">Student / Faculty</span>
+              <span className="claim-pill">Department Coordinator</span>
+              <span className="claim-pill">HOD</span>
+              <span className="claim-pill">Institution Coordinator</span>
             </div>
           </div>
         </section>
 
         <section className="card p-6 md:p-10">
-          <div className="text-xs uppercase tracking-[0.2em] text-black/40">Register</div>
-          <h2 className="mt-4 text-2xl font-semibold font-display sm:text-3xl">Create account</h2>
+          <div className="section-eyebrow">Claim Registration</div>
+          <h2 className="section-head">Create account</h2>
           <form onSubmit={submit} className="mt-8 space-y-4">
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-black/40">Full name</label>

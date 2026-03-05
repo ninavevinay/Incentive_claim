@@ -145,7 +145,7 @@ export default function App() {
               {isDashboardRoute && (
                 <button
                   type="button"
-                  className="btn btn-ghost px-3 py-2 md:hidden"
+                  className="btn btn-ghost px-3 py-2 lg:hidden"
                   onClick={toggleMobileMenu}
                   aria-label="Toggle menu"
                   aria-expanded={false}

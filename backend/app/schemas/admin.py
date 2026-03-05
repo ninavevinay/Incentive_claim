@@ -1,6 +1,7 @@
 from datetime import datetime, date
 from pydantic import BaseModel, EmailStr, Field
 
+
 class AdminUserOut(BaseModel):
     id: int
     name: str
@@ -55,3 +56,19 @@ class AdminFormWindowOut(BaseModel):
 class AdminFormWindowUpdate(BaseModel):
     start_date: date
     end_date: date
+
+
+class AdminFeedbackOut(BaseModel):
+    id: int
+    user_id: int
+    name: str
+    email: EmailStr
+    role: str
+    department: str
+    benefit_status: str
+    message: str
+    rating: int | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
