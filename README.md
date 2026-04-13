@@ -1,35 +1,24 @@
-# Incentive Claim Portal
+﻿# Incentive Claim Portal
 
-**Private / Internal Project**
-- For college internal use only.
-- Do not share code or data publicly.
-- Store all secrets in `.env` and keep them out of Git.
+Private internal portal for students, faculty, authorities, and admins to submit, review, and manage incentive applications.
 
-Full-stack portal for students, faculty, authorities, and admins to submit, review, and manage incentive applications.
-
-**Key Features**
-- Role-based authentication (student, faculty, authority, admin)
-- Student & faculty application submission with document uploads
-- Multi-level review workflow (department coordinator -> HOD -> institution coordinator)
-- Admin dashboard: users, applications, login events, authority registration, form window
-- Notifications and public notices
-
-**Tech Stack**
+## Stack
 - Frontend: React + Vite + Tailwind CSS
 - Backend: FastAPI + SQLAlchemy + PostgreSQL
-- Auth: JWT
+- Auth: Email OTP to `@sbjit.edu.in` addresses + JWT session token
 - File storage: local `backend/uploads`
 
-## Project Structure
-```
-backend/   FastAPI API + DB + uploads
-frontend/  React UI (Vite)
-```
+## Key Rules
+- Only `@sbjit.edu.in` email addresses are allowed.
+- Student and faculty users self-register with email OTP.
+- Authority users must be created by an admin first.
+- Admin self-registration is limited to emails in `ADMIN_EMAIL_ALLOWLIST`.
+- Password login is enabled.
+- Forgot password uses OTP verification on registered email before allowing password reset.
 
-## Local Setup (Development)
+## Local Setup
 
-### 1) Database (PostgreSQL)
-Create DB and tables:
+### 1) Database
 ```bash
 psql -U postgres -f backend/schema.sql
 ```
@@ -37,26 +26,36 @@ psql -U postgres -f backend/schema.sql
 ### 2) Backend
 ```bash
 cd backend
-python -m venv venv
-venv\Scripts\activate  # Windows
-# source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-Create `.env` in `backend/`:
-```
-DATABASE_URL=postgresql+psycopg://postgres:<password>@localhost:5432/incentive_db
+Create or update `backend/.env`:
+```env
+DATABASE_URL=postgresql://postgres:<password>@localhost:5432/incentive_db
 SECRET_KEY=change_me
 ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-RATE_LIMIT_ENABLED=true
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+RATE_LIMIT_ENABLED=false
 RATE_LIMIT_WINDOW_SECONDS=60
 RATE_LIMIT_MAX_REQUESTS=600
+ALLOWED_EMAIL_DOMAIN=sbjit.edu.in
+ADMIN_EMAIL_ALLOWLIST=admin@sbjit.edu.in
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your-sender@gmail.com
+SMTP_PASSWORD=your-gmail-app-password
+SMTP_FROM_EMAIL=your-sender@gmail.com
+SMTP_FROM_NAME=SBJIT Incentive Portal
+SMTP_USE_TLS=true
+SMTP_USE_SSL=false
+OTP_EXPIRE_MINUTES=10
+OTP_RESEND_SECONDS=60
+OTP_LENGTH=6
 ```
 
 Run backend:
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### 3) Frontend
@@ -65,8 +64,8 @@ cd frontend
 npm install
 ```
 
-For local dev, set API base URL (so the UI can reach the backend):
-```
+Set frontend env if needed:
+```env
 VITE_API_URL=http://localhost:8000
 ```
 
@@ -75,22 +74,17 @@ Run frontend:
 npm run dev
 ```
 
-Open: `http://localhost:5173`
+## SMTP Note
+For Gmail, `SMTP_PASSWORD` must be a Google App Password, not your regular Gmail password.
 
-## Production Notes
-- Internal deployment only.
-- Serve frontend `dist/` with Nginx (or any static server).
-- Proxy `/api` and `/uploads` to the FastAPI server.
-- Configure Nginx `client_max_body_size` for uploads.
-- Store secrets in `.env` and keep it out of Git.
-
-## File Upload Limits
-Current UI validation limits each file to **150KB**. If you see HTTP `413` errors, increase proxy limits or reduce file size.
-
-## Routes & Roles
-- Student/Faculty registration: `/register`
-
+## Verification Flow
+- Register page sends OTP with name, role, and department details.
+- Admin register page sends OTP only for allowlisted admin emails.
+- Login uses email + password after registration.
+- Forgot Password sends reset OTP to the registered email and resets password after OTP verification.
+- Authority accounts are created by admin and then login with saved password.
 
 ## Troubleshooting
-- **413 Request Entity Too Large**: Increase proxy limit and/or reduce file size.
-- **CORS issues**: Set `VITE_API_URL` to your backend URL in local development.
+- OTP email not sent: fill `SMTP_USERNAME`, `SMTP_PASSWORD`, and `SMTP_FROM_EMAIL` in `backend/.env`.
+- Admin registration blocked: update `ADMIN_EMAIL_ALLOWLIST` in `backend/.env`.
+- Invalid domain: use an `@sbjit.edu.in` address only.
