@@ -1,29 +1,79 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
 from datetime import datetime
+from pathlib import Path
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.routers.profile import get_current_user
-from app.models.user import User
+from app.core.portal_notifications import queue_portal_notification
+from app.core.security import hash_password, is_allowed_email, normalize_email
 from app.models.application import Application
+from app.models.email_otp import EmailOtp
+from app.models.feedback import Feedback
 from app.models.form_window import FormWindow
 from app.models.login_event import LoginEvent
-from app.models.password_reset import PasswordResetRequest
+from app.models.notice import Notice
 from app.models.notification import Notification
-from app.models.feedback import Feedback
+from app.models.password_reset import PasswordResetRequest
+from app.models.user import User
+from app.routers.profile import get_current_user
 from app.schemas.admin import (
+    AdminCreateAuthorityUser,
+    AdminFeedbackOut,
+    AdminFormWindowOut,
+    AdminFormWindowUpdate,
     AdminUserOut,
     LoginEventOut,
     PasswordResetOut,
-    AdminPasswordUpdate,
-    AdminCreateAuthorityUser,
-    AdminFormWindowOut,
-    AdminFormWindowUpdate,
-    AdminFeedbackOut,
 )
 from app.schemas.application import ApplicationOut
-from app.core.security import hash_password
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+APPLICATION_UPLOAD_FIELDS = (
+    "fee_receipt_file",
+    "certificate_file",
+    "bank_passbook_file",
+    "signature_file",
+)
+
+
+def _collect_application_upload_refs(applications: list[Application]) -> list[str]:
+    refs: list[str] = []
+    for application in applications:
+        data = application.data or {}
+        for field in APPLICATION_UPLOAD_FIELDS:
+            value = data.get(field)
+            if isinstance(value, str) and value.strip():
+                refs.append(value.strip())
+    return refs
+
+
+def _delete_local_uploads(upload_refs: list[str]) -> None:
+    for upload_ref in {ref for ref in upload_refs if ref.startswith("/uploads/")}:
+        upload_name = Path(upload_ref).name
+        if not upload_name:
+            continue
+        try:
+            (Path("uploads") / upload_name).unlink(missing_ok=True)
+        except OSError:
+            continue
+
+
+def _delete_user_with_related_data(db: Session, target: User) -> list[str]:
+    user_id = target.id
+    notices = db.query(Notice).filter(Notice.created_by == user_id).all()
+    applications = db.query(Application).filter(Application.owner_id == user_id).all()
+    upload_refs = [notice.file_path for notice in notices if notice.file_path]
+    upload_refs.extend(_collect_application_upload_refs(applications))
+
+    db.query(EmailOtp).filter(EmailOtp.user_id == user_id).delete(synchronize_session=False)
+    db.query(EmailOtp).filter(EmailOtp.email == target.email).delete(synchronize_session=False)
+    db.query(Notification).filter(Notification.user_id == user_id).delete(synchronize_session=False)
+    db.query(Feedback).filter(Feedback.user_id == user_id).delete(synchronize_session=False)
+    db.query(LoginEvent).filter(LoginEvent.user_id == user_id).delete(synchronize_session=False)
+    db.query(PasswordResetRequest).filter(PasswordResetRequest.user_id == user_id).delete(synchronize_session=False)
+    db.query(Notice).filter(Notice.created_by == user_id).delete(synchronize_session=False)
+    db.query(Application).filter(Application.owner_id == user_id).delete(synchronize_session=False)
+    db.delete(target)
+    return upload_refs
 
 
 def require_admin(user: User):
@@ -122,6 +172,7 @@ def get_form_window(
 @router.put("/form-window", response_model=AdminFormWindowOut)
 def set_form_window(
     payload: AdminFormWindowUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -135,38 +186,26 @@ def set_form_window(
     window.end_date = payload.end_date
     window.updated_at = datetime.utcnow()
     db.add(window)
-    applicant_users = (
-        db.query(User)
-        .filter(User.role.in_(["student", "faculty"]))
-        .all()
-    )
+    applicant_users = db.query(User).filter(User.role.in_(["student", "faculty"])).all()
     start_label = payload.start_date.isoformat()
     end_label = payload.end_date.isoformat()
     for applicant in applicant_users:
-        db.add(
-            Notification(
-                user_id=applicant.id,
-                message=f"Form filling window is open from {start_label} to {end_label}",
-            )
+        queue_portal_notification(
+            db,
+            applicant,
+            message=f"Form filling window is open from {start_label} to {end_label}",
+            background_tasks=background_tasks,
+            email_subject="Form filling window is open",
+            email_headline="The portal form filling window is now open.",
+            email_details=[
+                f"Start date: {start_label}",
+                f"End date: {end_label}",
+                "Please submit your application within the announced window.",
+            ],
         )
     db.commit()
     db.refresh(window)
     return {"start_date": window.start_date, "end_date": window.end_date}
-
-@router.post("/users/password")
-def admin_set_password(
-    payload: AdminPasswordUpdate,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user)
-):
-    require_admin(user)
-    target = db.query(User).filter(User.id == payload.user_id).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="User not found")
-    target.password_hash = hash_password(payload.new_password)
-    db.add(target)
-    db.commit()
-    return {"message": "Password updated"}
 
 
 @router.post("/users/authority", response_model=AdminUserOut)
@@ -184,14 +223,19 @@ def admin_create_authority_user(
     if payload.role not in allowed_roles:
         raise HTTPException(status_code=400, detail="Invalid authority role")
 
-    existing = db.query(User).filter(User.email == payload.email).first()
+    email = normalize_email(payload.email)
+    if not is_allowed_email(email):
+        raise HTTPException(status_code=400, detail="Only @sbjit.edu.in email addresses are allowed")
+
+    existing = db.query(User).filter(User.email == email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
     new_user = User(
         name=payload.name,
-        email=payload.email,
+        email=email,
         password_hash=hash_password(payload.password),
+        auth_provider="email_password",
         role=payload.role,
         department=payload.department,
     )
@@ -199,6 +243,30 @@ def admin_create_authority_user(
     db.commit()
     db.refresh(new_user)
     return new_user
+
+
+@router.delete("/users/non-admin")
+def admin_delete_all_non_admin_users(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    require_admin(user)
+    targets = db.query(User).filter(User.role != "admin").all()
+    if not targets:
+        return {"message": "No non-admin users found", "deleted": 0}
+
+    upload_refs: list[str] = []
+    for target in targets:
+        upload_refs.extend(_delete_user_with_related_data(db, target))
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    _delete_local_uploads(upload_refs)
+    return {"message": "All non-admin users deleted", "deleted": len(targets)}
+
 
 @router.delete("/users/{user_id}")
 def admin_delete_user(
@@ -212,11 +280,13 @@ def admin_delete_user(
         raise HTTPException(status_code=404, detail="User not found")
     if target.role == "admin" and target.id == user.id:
         raise HTTPException(status_code=400, detail="Cannot delete your own admin account")
-    db.query(Notification).filter(Notification.user_id == user_id).delete()
-    db.query(Feedback).filter(Feedback.user_id == user_id).delete()
-    db.query(LoginEvent).filter(LoginEvent.user_id == user_id).delete()
-    db.query(PasswordResetRequest).filter(PasswordResetRequest.user_id == user_id).delete()
-    db.query(Application).filter(Application.owner_id == user_id).delete()
-    db.delete(target)
-    db.commit()
+
+    upload_refs = _delete_user_with_related_data(db, target)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    _delete_local_uploads(upload_refs)
     return {"message": "User deleted"}
+

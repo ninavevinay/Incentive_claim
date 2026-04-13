@@ -301,7 +301,6 @@ export default function FacultyDashboard() {
       <div className="mx-auto w-full max-w-7xl lg:max-w-none">
         <div className="mb-4 lg:hidden">
           <div>
-            <div className="text-xs uppercase tracking-[0.3em] text-black/40">Engineering</div>
             <div className="text-lg font-semibold font-display">Incentive Portal</div>
           </div>
         </div>
@@ -311,7 +310,7 @@ export default function FacultyDashboard() {
             <Sidebar items={menu} active={active} onSelect={handleSelect} user={user} />
           </div>
           <div className="card dashboard-content">
-          <Topbar title={`Faculty Dashboard`} subtitle={`Hello ${user?.name || ""}`} />
+          <Topbar title={`Faculty Portal`} subtitle={`Hello ${user?.name || ""}`} />
           {active !== "Application Form" && (
             <div className="dashboard-kpi-grid">
               <div className="panel p-4">
@@ -823,7 +822,7 @@ export default function FacultyDashboard() {
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-4 right-4 top-6">
-            <div className="card p-4">
+            <div className="card max-h-[80vh] overflow-y-auto p-4">
               <div className="flex items-center justify-between">
                 <div className="text-lg font-semibold font-display">Menu</div>
                 <button className="btn btn-ghost" onClick={() => setSidebarOpen(false)} aria-label="Close menu" type="button">

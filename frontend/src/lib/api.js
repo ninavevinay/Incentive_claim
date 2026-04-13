@@ -47,8 +47,11 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  register: (payload) => request("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
   login: (payload) => request("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
+  requestOtp: (payload) => request("/auth/request-otp", { method: "POST", body: JSON.stringify(payload) }),
+  verifyOtp: (payload) => request("/auth/verify-otp", { method: "POST", body: JSON.stringify(payload) }),
+  forgotPassword: (payload) => request("/auth/forgot-password", { method: "POST", body: JSON.stringify(payload) }),
+  resetPassword: (payload) => request("/auth/reset-password", { method: "POST", body: JSON.stringify(payload) }),
   me: () => request("/profile/me"),
   updateProfile: (payload) => request("/profile/me", { method: "PUT", body: JSON.stringify(payload) }),
   deleteMe: () => request("/profile/me", { method: "DELETE" }),
@@ -85,7 +88,6 @@ export const api = {
     request("/admin/form-window", { method: "PUT", body: JSON.stringify(payload) }),
   adminCreateAuthorityUser: (payload) =>
     request("/admin/users/authority", { method: "POST", body: JSON.stringify(payload) }),
-  adminSetUserPassword: (payload) =>
-    request("/admin/users/password", { method: "POST", body: JSON.stringify(payload) }),
+  adminDeleteAllNonAdminUsers: () => request("/admin/users/non-admin", { method: "DELETE" }),
   adminDeleteUser: (id) => request(`/admin/users/${id}`, { method: "DELETE" })
 };

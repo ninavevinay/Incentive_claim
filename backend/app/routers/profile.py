@@ -1,16 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from jose import jwt, JWTError
+﻿from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from app.core.config import settings
+from jose import JWTError
+from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.routing import dashboard_path_for_user, slugify_department
-from app.models.user import User
+from app.core.security import decode_access_token
 from app.models.application import Application
-from app.models.login_event import LoginEvent
-from app.models.password_reset import PasswordResetRequest
-from app.models.notification import Notification
 from app.models.feedback import Feedback
+from app.models.login_event import LoginEvent
+from app.models.notification import Notification
+from app.models.password_reset import PasswordResetRequest
+from app.models.user import User
 from app.schemas.user import UserUpdate, UserOut
 
 router = APIRouter(prefix="/profile", tags=["profile"])
@@ -20,7 +20,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)):
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        payload = decode_access_token(token)
         user_id = int(payload.get("sub"))
     except (JWTError, TypeError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -45,6 +45,7 @@ def _to_user_out(user: User) -> UserOut:
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
     return _to_user_out(user)
+
 
 @router.put("/me", response_model=UserOut)
 def update_me(payload: UserUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):

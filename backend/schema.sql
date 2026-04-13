@@ -1,4 +1,4 @@
--- PostgreSQL schema
+﻿-- PostgreSQL schema
 CREATE DATABASE incentive_db;
 \c incentive_db;
 
@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(120) NOT NULL,
   email VARCHAR(255) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
+  google_sub VARCHAR(255) UNIQUE,
+  auth_provider VARCHAR(32) NOT NULL DEFAULT 'local',
   role VARCHAR(64) NOT NULL,
   department VARCHAR(120) NOT NULL
 );
@@ -29,6 +31,14 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS notices (
+  id SERIAL PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  file_path VARCHAR(500) NOT NULL,
+  created_by INT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS login_events (
   id SERIAL PRIMARY KEY,
   user_id INT NOT NULL REFERENCES users(id),
@@ -47,6 +57,23 @@ CREATE TABLE IF NOT EXISTS password_reset_requests (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   used_at TIMESTAMP NULL
 );
+
+CREATE TABLE IF NOT EXISTS email_otps (
+  id SERIAL PRIMARY KEY,
+  email VARCHAR(255) NOT NULL,
+  purpose VARCHAR(32) NOT NULL,
+  otp_hash VARCHAR(128) NOT NULL,
+  password_hash VARCHAR(255) NULL,
+  name VARCHAR(120) NULL,
+  role VARCHAR(64) NULL,
+  department VARCHAR(120) NULL,
+  user_id INT NULL REFERENCES users(id),
+  request_ip VARCHAR(64) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMP NOT NULL,
+  used_at TIMESTAMP NULL
+);
+CREATE INDEX IF NOT EXISTS ix_email_otps_email ON email_otps (email);
 
 CREATE TABLE IF NOT EXISTS form_windows (
   id INT PRIMARY KEY,

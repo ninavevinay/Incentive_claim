@@ -7,7 +7,7 @@ import { getApprovedAmount, getInstitutionCoordinatorApprovedAmount } from "../l
 const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 const baseMenu = [
-  "Dashboard",
+  "Overview",
   "Pending Applications",
   "My Approved Applications",
   "Total Applications",
@@ -26,7 +26,7 @@ const ROLE_LABELS = {
 
 export default function AuthorityDashboard() {
   const { user, setUser } = useAuth();
-  const [active, setActive] = useState("Dashboard");
+  const [active, setActive] = useState("Overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [apps, setApps] = useState([]);
   const [allApps, setAllApps] = useState([]);
@@ -92,7 +92,7 @@ export default function AuthorityDashboard() {
 
   useEffect(() => {
     if (!menu.includes(active)) {
-      setActive("Dashboard");
+      setActive("Overview");
     }
   }, [user?.role, active]);
 
@@ -410,7 +410,6 @@ export default function AuthorityDashboard() {
       <div className="mx-auto w-full max-w-7xl lg:max-w-none">
         <div className="mb-4 lg:hidden">
           <div>
-            <div className="text-xs uppercase tracking-[0.3em] text-black/40">Engineering</div>
             <div className="text-lg font-semibold font-display">Incentive Portal</div>
           </div>
         </div>
@@ -420,8 +419,8 @@ export default function AuthorityDashboard() {
             <Sidebar items={menu} active={active} onSelect={handleSelect} user={user} />
           </div>
           <div className="card dashboard-content">
-          <Topbar title={`Authority Dashboard`} subtitle={`Hello ${user?.name || ""}`} />
-          {active === "Dashboard" && (
+          <Topbar title={`Authority Portal`} subtitle={`Hello ${user?.name || ""}`} />
+          {active === "Overview" && (
             <div className="mt-6">
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="panel p-4">
@@ -859,7 +858,7 @@ export default function AuthorityDashboard() {
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-4 right-4 top-6">
-            <div className="card p-4">
+            <div className="card max-h-[80vh] overflow-y-auto p-4">
               <div className="flex items-center justify-between">
                 <div className="text-lg font-semibold font-display">Menu</div>
                 <button className="btn btn-ghost" onClick={() => setSidebarOpen(false)} aria-label="Close menu" type="button">

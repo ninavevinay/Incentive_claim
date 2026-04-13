@@ -1,4 +1,4 @@
-from sqlalchemy import String
+﻿from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
@@ -9,6 +9,8 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
+    auth_provider: Mapped[str] = mapped_column(String(32), default="local")
     role: Mapped[str] = mapped_column(String(64))
     department: Mapped[str] = mapped_column(String(120))
 

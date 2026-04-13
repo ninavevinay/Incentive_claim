@@ -9,6 +9,9 @@ const AUTHORITY_ROLES = [
   { value: "department_hod", label: "Department HOD" },
   { value: "institution_coordinator", label: "Institution Coordinator" }
 ];
+const AUTHORITY_ROLE_LABELS = Object.fromEntries(
+  AUTHORITY_ROLES.map((role) => [role.value, role.label])
+);
 
 const DEPARTMENTS = [
   "First Year",
@@ -24,6 +27,7 @@ const DEPARTMENTS = [
 ];
 const ADMIN_SECTIONS = [
   "Register Authority",
+  "Authority Users",
   "Registered Users",
   "Login Events",
   "User Feedback",
@@ -39,11 +43,8 @@ export default function AdminDashboard() {
   const [loginEvents, setLoginEvents] = useState([]);
   const [feedbackEntries, setFeedbackEntries] = useState([]);
   const [error, setError] = useState("");
-  const [passwordForm, setPasswordForm] = useState({ new_password: "" });
-  const [passwordMessage, setPasswordMessage] = useState("");
-  const [userQuery, setUserQuery] = useState("");
-  const [selectedUser, setSelectedUser] = useState(null);
   const [userFilter, setUserFilter] = useState("");
+  const [authorityFilter, setAuthorityFilter] = useState("");
   const [applicationFilter, setApplicationFilter] = useState("");
   const [feedbackFilter, setFeedbackFilter] = useState("");
   const [expandedAppId, setExpandedAppId] = useState(null);
@@ -52,6 +53,8 @@ export default function AdminDashboard() {
   const [formWindowForm, setFormWindowForm] = useState({ start_date: "", end_date: "" });
   const [formWindowMessage, setFormWindowMessage] = useState("");
   const [applicationsMessage, setApplicationsMessage] = useState({ type: "", text: "" });
+  const [usersMessage, setUsersMessage] = useState({ type: "", text: "" });
+  const [bulkDeletingUsers, setBulkDeletingUsers] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [feedbackExporting, setFeedbackExporting] = useState(false);
   const [feedbackExportMessage, setFeedbackExportMessage] = useState("");
@@ -64,25 +67,26 @@ export default function AdminDashboard() {
   });
   const [authorityMessage, setAuthorityMessage] = useState("");
 
-  useEffect(() => {
-    Promise.all([
+  const loadAdminData = async () => {
+    const [usersData, appsData, loginData, feedbackData, formWindowData] = await Promise.all([
       api.adminUsers(),
       api.adminApplications(),
       api.adminLoginEvents(),
       api.adminFeedback(),
       api.adminFormWindow()
-    ])
-      .then(([usersData, appsData, loginData, feedbackData, formWindowData]) => {
-        setUsers(usersData);
-        setApplications(appsData);
-        setLoginEvents(loginData);
-        setFeedbackEntries(feedbackData);
-        setFormWindowForm({
-          start_date: formWindowData?.start_date || "",
-          end_date: formWindowData?.end_date || ""
-        });
-      })
-      .catch((err) => setError(err.message || "Failed to load admin data"));
+    ]);
+    setUsers(usersData);
+    setApplications(appsData);
+    setLoginEvents(loginData);
+    setFeedbackEntries(feedbackData);
+    setFormWindowForm({
+      start_date: formWindowData?.start_date || "",
+      end_date: formWindowData?.end_date || ""
+    });
+  };
+
+  useEffect(() => {
+    loadAdminData().catch((err) => setError(err.message || "Failed to load admin data"));
   }, []);
 
   useEffect(() => {
@@ -94,6 +98,12 @@ export default function AdminDashboard() {
   const filteredUsers = users.filter((u) => {
     const value = `${u.name} ${u.email} ${u.role} ${u.department}`.toLowerCase();
     return value.includes(userFilter.trim().toLowerCase());
+  });
+  const nonAdminUsers = users.filter((u) => u.role !== "admin");
+  const authorityUsers = users.filter((u) => Boolean(AUTHORITY_ROLE_LABELS[u.role]));
+  const filteredAuthorityUsers = authorityUsers.filter((u) => {
+    const value = `${u.name} ${u.email} ${u.department} ${AUTHORITY_ROLE_LABELS[u.role] || u.role}`.toLowerCase();
+    return value.includes(authorityFilter.trim().toLowerCase());
   });
 
   const filteredApplications = applications.filter((app) => {
@@ -119,32 +129,6 @@ export default function AdminDashboard() {
   const sortedApplications = [...filteredApplications].sort((a, b) => a.id - b.id);
   const selectedApplication = sortedApplications.find((app) => app.id === expandedAppId) || null;
 
-  const matchingUsers = users.filter((u) => {
-    const value = `${u.name} ${u.email}`.toLowerCase();
-    return userQuery.trim() && value.includes(userQuery.trim().toLowerCase());
-  });
-
-  const submitPassword = async (e) => {
-    e.preventDefault();
-    setPasswordMessage("");
-    try {
-      if (!selectedUser) {
-        setPasswordMessage("Select a user to update.");
-        return;
-      }
-      await api.adminSetUserPassword({
-        user_id: selectedUser.id,
-        new_password: passwordForm.new_password
-      });
-      setPasswordMessage("Password updated.");
-      setPasswordForm({ new_password: "" });
-      setUserQuery("");
-      setSelectedUser(null);
-    } catch (err) {
-      setPasswordMessage(err.message || "Failed to update password");
-    }
-  };
-
   const submitAuthorityUser = async (e) => {
     e.preventDefault();
     setAuthorityMessage("");
@@ -158,24 +142,55 @@ export default function AdminDashboard() {
         role: "department_coordinator",
         department: ""
       });
-      setAuthorityMessage("Authority user created.");
+      setAuthorityMessage("Authority user created with password login access.");
     } catch (err) {
       setAuthorityMessage(err.message || "Failed to create authority user");
     }
   };
 
   const deleteUser = async (userId) => {
-    setPasswordMessage("");
+    setUsersMessage({ type: "", text: "" });
     try {
       if (!window.confirm("Delete this user and all related data?")) return;
       await api.adminDeleteUser(userId);
-      setUsers((prev) => prev.filter((u) => u.id !== userId));
-      if (selectedUser?.id === userId) {
-        setSelectedUser(null);
-        setUserQuery("");
-      }
+      await loadAdminData();
+      setExpandedAppId(null);
+      setViewMode("list");
+      setUsersMessage({ type: "success", text: "User deleted." });
+      setError("");
     } catch (err) {
-      setPasswordMessage(err.message || "Failed to delete user");
+      const message = err.message || "Failed to delete user";
+      setUsersMessage({ type: "error", text: message });
+      setError(message);
+    }
+  };
+
+  const deleteAllNonAdminUsers = async () => {
+    setUsersMessage({ type: "", text: "" });
+    if (nonAdminUsers.length === 0) {
+      setUsersMessage({ type: "error", text: "No non-admin users to delete." });
+      return;
+    }
+    const confirmation = window.prompt('Type "DELETE USERS" to remove all non-admin users.');
+    if (confirmation !== "DELETE USERS") return;
+    setBulkDeletingUsers(true);
+    try {
+      const result = await api.adminDeleteAllNonAdminUsers();
+      await loadAdminData();
+      setExpandedAppId(null);
+      setViewMode("list");
+      setUsersMessage({
+        type: "success",
+        text: result?.message || "All non-admin users deleted."
+      });
+      setApplicationsMessage({ type: "", text: "" });
+      setError("");
+    } catch (err) {
+      const message = err.message || "Failed to delete non-admin users";
+      setUsersMessage({ type: "error", text: message });
+      setError(message);
+    } finally {
+      setBulkDeletingUsers(false);
     }
   };
 
@@ -353,7 +368,7 @@ export default function AdminDashboard() {
             <div className="text-lg font-semibold font-display">System Control</div>
           </div>
         </div>
-        <div className="dashboard-shell" style={{ "--sidebar-width": "220px" }}>
+        <div className="dashboard-shell" style={{ "--sidebar-width": "260px" }}>
           <div className="dashboard-sidebar">
             <Sidebar items={ADMIN_SECTIONS} active={activeSection} onSelect={selectSection} user={user} />
           </div>
@@ -393,10 +408,11 @@ export default function AdminDashboard() {
                 <input
                   className="input"
                   type="password"
-                  placeholder="Password"
+                  placeholder="Temporary password"
                   value={authorityForm.password}
                   onChange={(e) => setAuthorityForm((prev) => ({ ...prev, password: e.target.value }))}
                   required
+                  minLength={6}
                 />
                 <select
                   className="input"
@@ -426,62 +442,27 @@ export default function AdminDashboard() {
           )}
 
           <div className="panel p-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-black/40">Change User Password</div>
-            <form onSubmit={submitPassword} className="mt-4 grid gap-3 md:grid-cols-[2fr_2fr_1fr]">
-              <input
-                className="input"
-                placeholder="Search user by name or email"
-                value={userQuery}
-                onChange={(e) => {
-                  setUserQuery(e.target.value);
-                  setSelectedUser(null);
-                }}
-                required
-              />
-              <input
-                className="input"
-                type="password"
-                placeholder="New password"
-                value={passwordForm.new_password}
-                onChange={(e) => setPasswordForm((prev) => ({ ...prev, new_password: e.target.value }))}
-                required
-              />
-              <button className="btn btn-primary" type="submit">Update</button>
-            </form>
-            {userQuery && matchingUsers.length > 0 && !selectedUser && (
-              <div className="mt-3 grid gap-2">
-                {matchingUsers.slice(0, 6).map((u) => (
-                  <button
-                    key={u.id}
-                    type="button"
-                    className="panel px-3 py-2 text-left text-sm hover:bg-black/5"
-                    onClick={() => {
-                      setSelectedUser(u);
-                      setUserQuery(`${u.name} (${u.email})`);
-                    }}
-                  >
-                    <div className="font-semibold">{u.name}</div>
-                    <div className="text-xs text-black/60">{u.email} - {u.role} - {u.department}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-            {selectedUser && (
-              <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 text-sm">
-                <div className="text-xs uppercase tracking-[0.2em] text-black/40">Selected User</div>
-                <div className="mt-2 font-semibold">{selectedUser.name}</div>
-                <div className="text-black/70">{selectedUser.email}</div>
-                <div className="text-black/60">{selectedUser.role} - {selectedUser.department}</div>
-              </div>
-            )}
-            {passwordMessage && <div className="mt-2 text-sm text-black/70">{passwordMessage}</div>}
+            <div className="text-xs uppercase tracking-[0.2em] text-black/40">Password Login Access</div>
+            <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-4 text-sm text-black/70">
+              New users verify their email once with OTP during registration, then log in later using their saved password and verified <span className="font-semibold text-black">@sbjit.edu.in</span> email.
+            </div>
           </div>
 
           {activeSection === "Registered Users" && (
           <div className="mt-6 panel p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-xl font-semibold font-display">Registered Users</h2>
-              <div className="muted text-sm">{users.length} total</div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  className="btn btn-ghost text-rose-600"
+                  type="button"
+                  onClick={deleteAllNonAdminUsers}
+                  disabled={bulkDeletingUsers || nonAdminUsers.length === 0}
+                >
+                  {bulkDeletingUsers ? "Deleting..." : "Delete All Non-Admin Users"}
+                </button>
+                <div className="muted text-sm">{users.length} total</div>
+              </div>
             </div>
             <div className="mt-3">
               <input
@@ -497,13 +478,17 @@ export default function AdminDashboard() {
                   <div key={u.id} className="panel p-3">
                     <div className="flex items-center justify-between gap-2">
                       <div className="font-semibold">{u.name}</div>
-                      <button
-                        className="btn btn-ghost text-rose-600"
-                        type="button"
-                        onClick={() => deleteUser(u.id)}
-                      >
-                        Delete
-                      </button>
+                      {u.role === "admin" ? (
+                        <span className="muted text-xs">Protected</span>
+                      ) : (
+                        <button
+                          className="btn btn-ghost text-rose-600"
+                          type="button"
+                          onClick={() => deleteUser(u.id)}
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                     <div className="mt-1 text-xs text-black/60">{u.email}</div>
                     <div className="mt-2 text-sm text-black/70">Role: {u.role}</div>
@@ -511,37 +496,100 @@ export default function AdminDashboard() {
                   </div>
                 ))}
               </div>
-              <table className="hidden w-full text-left text-sm sm:table">
-                <thead>
-                  <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
-                    <th className="py-2 pr-4">Name</th>
-                    <th className="py-2 pr-4">Email</th>
-                    <th className="py-2 pr-4">Role</th>
-                    <th className="py-2 pr-4">Department</th>
-                    <th className="py-2 pr-4">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-black/10">
-                  {filteredUsers.map((u) => (
-                    <tr key={u.id}>
-                      <td className="py-3 pr-4 font-medium">{u.name}</td>
-                      <td className="py-3 pr-4">{u.email}</td>
-                      <td className="py-3 pr-4">{u.role}</td>
-                      <td className="py-3 pr-4">{u.department}</td>
-                      <td className="py-3 pr-4">
-                        <button
-                          className="btn btn-ghost"
-                          type="button"
-                          onClick={() => deleteUser(u.id)}
-                        >
-                          Delete
-                        </button>
-                      </td>
+              <div className="hidden overflow-x-auto sm:block">
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <thead>
+                    <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
+                      <th className="py-2 pr-4">Name</th>
+                      <th className="py-2 pr-4">Email</th>
+                      <th className="py-2 pr-4">Role</th>
+                      <th className="py-2 pr-4">Department</th>
+                      <th className="py-2 pr-4">Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-black/10">
+                    {filteredUsers.map((u) => (
+                      <tr key={u.id}>
+                        <td className="py-3 pr-4 font-medium">{u.name}</td>
+                        <td className="py-3 pr-4">{u.email}</td>
+                        <td className="py-3 pr-4">{u.role}</td>
+                        <td className="py-3 pr-4">{u.department}</td>
+                        <td className="py-3 pr-4">
+                          {u.role === "admin" ? (
+                            <span className="muted text-xs">Protected</span>
+                          ) : (
+                            <button
+                              className="btn btn-ghost"
+                              type="button"
+                              onClick={() => deleteUser(u.id)}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               {filteredUsers.length === 0 && <div className="muted mt-3 text-sm">No users found.</div>}
+              {usersMessage.text && (
+                <div className={`mt-3 text-sm ${usersMessage.type === "error" ? "text-rose-600" : "text-emerald-600"}`}>
+                  {usersMessage.text}
+                </div>
+              )}
+            </div>
+          </div>
+          )}
+
+          {activeSection === "Authority Users" && (
+          <div className="mt-6 panel p-4">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-xl font-semibold font-display">Authority Users</h2>
+              <div className="muted text-sm">{authorityUsers.length} total</div>
+            </div>
+            <div className="mt-3">
+              <input
+                className="input"
+                placeholder="Search authority users by name, email, department, or role"
+                value={authorityFilter}
+                onChange={(e) => setAuthorityFilter(e.target.value)}
+              />
+            </div>
+            <div className="mt-4">
+              <div className="grid gap-3 sm:hidden">
+                {filteredAuthorityUsers.map((u) => (
+                  <div key={u.id} className="panel p-3">
+                    <div className="font-semibold">{u.name}</div>
+                    <div className="mt-1 text-xs text-black/60">{u.email}</div>
+                    <div className="mt-2 text-sm text-black/70">Department: {u.department}</div>
+                    <div className="text-sm text-black/70">Role: {AUTHORITY_ROLE_LABELS[u.role] || u.role}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto sm:block">
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <thead>
+                    <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
+                      <th className="py-2 pr-4">Full Name</th>
+                      <th className="py-2 pr-4">Email</th>
+                      <th className="py-2 pr-4">Department</th>
+                      <th className="py-2 pr-4">Role</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-black/10">
+                    {filteredAuthorityUsers.map((u) => (
+                      <tr key={u.id}>
+                        <td className="py-3 pr-4 font-medium">{u.name}</td>
+                        <td className="py-3 pr-4">{u.email}</td>
+                        <td className="py-3 pr-4">{u.department}</td>
+                        <td className="py-3 pr-4">{AUTHORITY_ROLE_LABELS[u.role] || u.role}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {filteredAuthorityUsers.length === 0 && <div className="muted mt-3 text-sm">No authority users found.</div>}
             </div>
           </div>
           )}
@@ -564,26 +612,28 @@ export default function AdminDashboard() {
                 </div>
               ))}
             </div>
-            <table className="hidden w-full text-left text-sm sm:table">
-              <thead>
-                <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
-                  <th className="py-2 pr-4">Email</th>
-                  <th className="py-2 pr-4">IP Address</th>
-                  <th className="py-2 pr-4">User Agent</th>
-                  <th className="py-2 pr-4">Time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-black/10">
-                {loginEvents.map((e) => (
-                  <tr key={e.id}>
-                    <td className="py-3 pr-4 font-medium">{e.email}</td>
-                    <td className="py-3 pr-4">{e.ip_address}</td>
-                    <td className="py-3 pr-4 max-w-[280px] truncate" title={e.user_agent}>{e.user_agent}</td>
-                    <td className="py-3 pr-4">{new Date(e.created_at).toLocaleString()}</td>
+            <div className="hidden overflow-x-auto sm:block">
+              <table className="w-full min-w-[900px] text-left text-sm">
+                <thead>
+                  <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
+                    <th className="py-2 pr-4">Email</th>
+                    <th className="py-2 pr-4">IP Address</th>
+                    <th className="py-2 pr-4">User Agent</th>
+                    <th className="py-2 pr-4">Time</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-black/10">
+                  {loginEvents.map((e) => (
+                    <tr key={e.id}>
+                      <td className="py-3 pr-4 font-medium">{e.email}</td>
+                      <td className="py-3 pr-4">{e.ip_address}</td>
+                      <td className="py-3 pr-4 max-w-[360px] truncate" title={e.user_agent}>{e.user_agent}</td>
+                      <td className="py-3 pr-4">{new Date(e.created_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             {loginEvents.length === 0 && <div className="muted mt-3 text-sm">No login events.</div>}
           </div>
         </section>
@@ -631,34 +681,36 @@ export default function AdminDashboard() {
                 </div>
               ))}
             </div>
-            <table className="hidden w-full text-left text-sm sm:table">
-              <thead>
-                <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
-                  <th className="py-2 pr-4">User</th>
-                  <th className="py-2 pr-4">Role</th>
-                  <th className="py-2 pr-4">Benefit</th>
-                  <th className="py-2 pr-4">Rating</th>
-                  <th className="py-2 pr-4">Message</th>
-                  <th className="py-2 pr-4">Time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-black/10">
-                {filteredFeedback.map((entry) => (
-                  <tr key={entry.id}>
-                    <td className="py-3 pr-4">
-                      <div className="font-medium">{entry.name}</div>
-                      <div className="text-xs text-black/60">{entry.email}</div>
-                      <div className="text-xs text-black/60">{entry.department}</div>
-                    </td>
-                    <td className="py-3 pr-4">{entry.role}</td>
-                    <td className="py-3 pr-4">{String(entry.benefit_status || "beneficial").replace(/_/g, " ")}</td>
-                    <td className="py-3 pr-4">{entry.rating ?? "-"}/5</td>
-                    <td className="py-3 pr-4 max-w-[360px]">{entry.message}</td>
-                    <td className="py-3 pr-4">{new Date(entry.created_at).toLocaleString()}</td>
+            <div className="hidden overflow-x-auto sm:block">
+              <table className="w-full min-w-[1040px] text-left text-sm">
+                <thead>
+                  <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
+                    <th className="py-2 pr-4">User</th>
+                    <th className="py-2 pr-4">Role</th>
+                    <th className="py-2 pr-4">Benefit</th>
+                    <th className="py-2 pr-4">Rating</th>
+                    <th className="py-2 pr-4">Message</th>
+                    <th className="py-2 pr-4">Time</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-black/10">
+                  {filteredFeedback.map((entry) => (
+                    <tr key={entry.id}>
+                      <td className="py-3 pr-4">
+                        <div className="font-medium">{entry.name}</div>
+                        <div className="text-xs text-black/60">{entry.email}</div>
+                        <div className="text-xs text-black/60">{entry.department}</div>
+                      </td>
+                      <td className="py-3 pr-4">{entry.role}</td>
+                      <td className="py-3 pr-4">{String(entry.benefit_status || "beneficial").replace(/_/g, " ")}</td>
+                      <td className="py-3 pr-4">{entry.rating ?? "-"}/5</td>
+                      <td className="py-3 pr-4 max-w-[420px] break-words">{entry.message}</td>
+                      <td className="py-3 pr-4">{new Date(entry.created_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             {filteredFeedback.length === 0 && <div className="muted mt-3 text-sm">No feedback found.</div>}
             {feedbackExportMessage && <div className="mt-3 text-sm text-black/70">{feedbackExportMessage}</div>}
           </div>
@@ -748,7 +800,7 @@ export default function AdminDashboard() {
                   {Object.entries(selectedApplication.data || {}).map(([key, value]) => (
                     <div key={key} className="rounded-xl border border-black/10 bg-white/70 p-3">
                       <div className="text-xs uppercase tracking-[0.2em] text-black/40">{key.replace(/_/g, " ")}</div>
-                      <div className="mt-1 text-sm text-black/80">{String(value ?? "-")}</div>
+                      <div className="mt-1 break-words text-sm text-black/80">{String(value ?? "-")}</div>
                     </div>
                   ))}
                 </div>
@@ -776,7 +828,7 @@ export default function AdminDashboard() {
                       {Object.entries(app.data || {}).map(([key, value]) => (
                         <div key={`${app.id}-${key}`} className="rounded-xl border border-black/10 bg-white/70 p-3">
                           <div className="text-xs uppercase tracking-[0.2em] text-black/40">{key.replace(/_/g, " ")}</div>
-                          <div className="mt-1 text-sm text-black/80">{String(value ?? "-")}</div>
+                          <div className="mt-1 break-words text-sm text-black/80">{String(value ?? "-")}</div>
                         </div>
                       ))}
                     </div>
@@ -826,50 +878,52 @@ export default function AdminDashboard() {
                     </div>
                   ))}
                 </div>
-                <table className="hidden w-full text-left text-sm sm:table">
-                  <thead>
-                    <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
-                      <th className="py-2 pr-4">ID</th>
-                      <th className="py-2 pr-4">Applicant</th>
-                      <th className="py-2 pr-4">Type</th>
-                      <th className="py-2 pr-4">Status</th>
-                      <th className="py-2 pr-4">Department</th>
-                      <th className="py-2 pr-4">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-black/10">
-                    {sortedApplications.map((app) => (
-                      <tr key={app.id}>
-                        <td className="py-3 pr-4">{app.id}</td>
-                        <td className="py-3 pr-4 font-medium">{app.data?.applicant_name || app.data?.application_name || "-"}</td>
-                        <td className="py-3 pr-4">{app.application_type}</td>
-                        <td className="py-3 pr-4">{app.status}</td>
-                        <td className="py-3 pr-4">{app.data?.department || "-"}</td>
-                        <td className="py-3 pr-4">
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              className="btn btn-ghost"
-                              type="button"
-                              onClick={() => {
-                                setExpandedAppId(app.id);
-                                setViewMode("details");
-                              }}
-                            >
-                              Details
-                            </button>
-                            <button
-                              className="btn btn-ghost text-rose-600"
-                              type="button"
-                              onClick={() => deleteApplication(app.id)}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
+                <div className="hidden overflow-x-auto sm:block">
+                  <table className="w-full min-w-[860px] text-left text-sm">
+                    <thead>
+                      <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
+                        <th className="py-2 pr-4">ID</th>
+                        <th className="py-2 pr-4">Applicant</th>
+                        <th className="py-2 pr-4">Type</th>
+                        <th className="py-2 pr-4">Status</th>
+                        <th className="py-2 pr-4">Department</th>
+                        <th className="py-2 pr-4">Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-black/10">
+                      {sortedApplications.map((app) => (
+                        <tr key={app.id}>
+                          <td className="py-3 pr-4">{app.id}</td>
+                          <td className="py-3 pr-4 font-medium">{app.data?.applicant_name || app.data?.application_name || "-"}</td>
+                          <td className="py-3 pr-4">{app.application_type}</td>
+                          <td className="py-3 pr-4">{app.status}</td>
+                          <td className="py-3 pr-4">{app.data?.department || "-"}</td>
+                          <td className="py-3 pr-4">
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                className="btn btn-ghost"
+                                type="button"
+                                onClick={() => {
+                                  setExpandedAppId(app.id);
+                                  setViewMode("details");
+                                }}
+                              >
+                                Details
+                              </button>
+                              <button
+                                className="btn btn-ghost text-rose-600"
+                                type="button"
+                                onClick={() => deleteApplication(app.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </>
             )}
             {applicationsMessage.text && (
@@ -890,8 +944,8 @@ export default function AdminDashboard() {
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
-          <div className="absolute left-4 right-4 top-6">
-            <div className="card p-4">
+          <div className="absolute bottom-6 left-4 right-4 top-6">
+            <div className="card h-full overflow-y-auto p-4">
               <div className="flex items-center justify-between">
                 <div className="text-lg font-semibold font-display">Menu</div>
                 <button className="btn btn-ghost" onClick={() => setSidebarOpen(false)} aria-label="Close menu" type="button">
@@ -916,3 +970,9 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
+
+
+
+
+

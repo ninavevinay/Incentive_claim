@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 import re
 from app.core.database import get_db
+from app.core.portal_notifications import queue_portal_notification
 from app.models.application import Application
 from app.models.form_window import FormWindow
 from app.models.notification import Notification
@@ -49,6 +50,67 @@ def _norm(value: str | None) -> str:
 
 
 MAX_UPLOAD_BYTES = 150 * 1024
+ROLE_LABELS = {
+    "department_coordinator": "Department Coordinator",
+    "department_hod": "Department HOD",
+    "institution_coordinator": "Institution Coordinator",
+}
+STATUS_LABELS = {
+    "pending_department_coordinator": "Pending Department Coordinator review",
+    "pending_department_hod": "Pending Department HOD review",
+    "pending_institution_coordinator": "Pending Institution Coordinator review",
+    "approved": "Approved",
+    "rejected": "Rejected",
+}
+
+
+def _role_label(role: str) -> str:
+    return ROLE_LABELS.get(role, role.replace("_", " ").title())
+
+
+
+def _status_label(status: str) -> str:
+    return STATUS_LABELS.get(status, status.replace("_", " ").title())
+
+
+
+def _application_reference(app: Application) -> str:
+    return f"Application ID {app.id}"
+
+
+
+def _reviewers_for_stage(db: Session, role: str, department: str | None) -> list[User]:
+    query = db.query(User).filter(User.role == role)
+    if role in {"department_coordinator", "department_hod"}:
+        query = query.filter(User.department == (department or ""))
+    return query.order_by(User.id.asc()).all()
+
+
+
+def _queue_review_alerts(
+    db: Session,
+    background_tasks: BackgroundTasks,
+    reviewers: list[User],
+    app: Application,
+    applicant_name: str,
+    department: str | None,
+    stage_role: str,
+) -> None:
+    for reviewer in reviewers:
+        queue_portal_notification(
+            db,
+            reviewer,
+            message=f"{_application_reference(app)} awaits your review",
+            background_tasks=background_tasks,
+            email_subject="Application awaiting review",
+            email_headline=f"{_application_reference(app)} is awaiting your review.",
+            email_details=[
+                f"Applicant: {applicant_name}",
+                f"Application type: {app.application_type.title()}",
+                f"Department: {department or '-'}",
+                f"Review stage: {_role_label(stage_role)}",
+            ],
+        )
 
 
 def _save_upload(file: UploadFile | None) -> str | None:
@@ -305,6 +367,7 @@ def repair_legacy_review_history(db: Session) -> int:
 
 @router.post("/student", response_model=ApplicationOut)
 def create_student_application(
+    background_tasks: BackgroundTasks,
     department: str = Form(...),
     applicant_name: str = Form(...),
     usn: str = Form(...),
@@ -379,13 +442,37 @@ def create_student_application(
     }
     app = Application(owner_id=user.id, application_type="student", status="pending_department_coordinator", data=payload)
     db.add(app)
-    db.add(Notification(user_id=user.id, message="Student application submitted"))
+    db.flush()
+
+    queue_portal_notification(
+        db,
+        user,
+        message=f"{_application_reference(app)} submitted successfully",
+        background_tasks=background_tasks,
+        email_subject="Application submitted successfully",
+        email_headline="Your student application has been submitted successfully.",
+        email_details=[
+            f"Application ID: {app.id}",
+            f"Department: {department}",
+            f"Current status: {_status_label(app.status)}",
+        ],
+    )
+    _queue_review_alerts(
+        db,
+        background_tasks,
+        _reviewers_for_stage(db, "department_coordinator", department),
+        app,
+        applicant_name,
+        department,
+        "department_coordinator",
+    )
+
     db.commit()
     db.refresh(app)
     return app
-
 @router.post("/faculty", response_model=ApplicationOut)
 def create_faculty_application(
+    background_tasks: BackgroundTasks,
     department: str = Form(...),
     applicant_name: str = Form(...),
     mobile_number: str = Form(...),
@@ -446,11 +533,34 @@ def create_faculty_application(
     }
     app = Application(owner_id=user.id, application_type="faculty", status="pending_department_coordinator", data=payload)
     db.add(app)
-    db.add(Notification(user_id=user.id, message="Faculty application submitted"))
+    db.flush()
+
+    queue_portal_notification(
+        db,
+        user,
+        message=f"{_application_reference(app)} submitted successfully",
+        background_tasks=background_tasks,
+        email_subject="Application submitted successfully",
+        email_headline="Your faculty application has been submitted successfully.",
+        email_details=[
+            f"Application ID: {app.id}",
+            f"Department: {department}",
+            f"Current status: {_status_label(app.status)}",
+        ],
+    )
+    _queue_review_alerts(
+        db,
+        background_tasks,
+        _reviewers_for_stage(db, "department_coordinator", department),
+        app,
+        applicant_name,
+        department,
+        "department_coordinator",
+    )
+
     db.commit()
     db.refresh(app)
     return app
-
 @router.get("/mine", response_model=list[ApplicationOut])
 def my_applications(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     apps = db.query(Application).filter(Application.owner_id == user.id).order_by(Application.created_at.desc()).all()
@@ -600,10 +710,12 @@ def role_reviewed_applications(
     return scoped
 
 @router.post("/{application_id}/review", response_model=ApplicationOut)
-def review_application(application_id: int, payload: ApplicationReview, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def review_application(application_id: int, payload: ApplicationReview, background_tasks: BackgroundTasks, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     role = user.role
     if role not in {"department_coordinator", "department_hod", "institution_coordinator"}:
         raise HTTPException(status_code=403, detail="Not authorized")
+    if payload.action not in {"approve", "reject"}:
+        raise HTTPException(status_code=400, detail="Invalid action")
     app = db.query(Application).filter(Application.id == application_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
@@ -616,16 +728,34 @@ def review_application(application_id: int, payload: ApplicationReview, db: Sess
     }[role]
     if app.status != expected_status:
         raise HTTPException(status_code=400, detail="Application is not at your approval stage")
+
+    applicant = db.query(User).filter(User.id == app.owner_id).first()
+    if not applicant:
+        raise HTTPException(status_code=404, detail="Application owner not found")
+
+    data = app.data or {}
+    applicant_name = (data.get("applicant_name") or applicant.name).strip()
+    application_department = data.get("department") or applicant.department
+    application_ref = _application_reference(app)
+
     if payload.action == "reject":
         if not payload.remark:
             raise HTTPException(status_code=400, detail="Remark is required for rejection")
-        role_label = {
-            "department_coordinator": "Department Coordinator",
-            "department_hod": "Department HOD",
-            "institution_coordinator": "Institution Coordinator"
-        }[role]
+        role_label = _role_label(role)
         app.status = "rejected"
-        db.add(Notification(user_id=app.owner_id, message=f"Your application was rejected by {role_label}. Remark: {payload.remark}"))
+        queue_portal_notification(
+            db,
+            applicant,
+            message=f"Your application was rejected by {role_label}. Remark: {payload.remark}",
+            background_tasks=background_tasks,
+            email_subject="Application rejected",
+            email_headline=f"{application_ref} was rejected by {role_label}.",
+            email_details=[
+                f"Application type: {app.application_type.title()}",
+                f"Department: {application_department or '-'}",
+                f"Remark: {payload.remark}",
+            ],
+        )
     else:
         if role == "institution_coordinator":
             if payload.approved_amount is None:
@@ -639,15 +769,45 @@ def review_application(application_id: int, payload: ApplicationReview, db: Sess
         }[role]
         app.status = next_status
         if role == "institution_coordinator":
-            db.add(
-                Notification(
-                    user_id=app.owner_id,
-                    message=f"Application ID {app.id} is approved with amount Rs. {payload.approved_amount:.2f}"
-                )
+            queue_portal_notification(
+                db,
+                applicant,
+                message=f"Application ID {app.id} is approved with amount Rs. {payload.approved_amount:.2f}",
+                background_tasks=background_tasks,
+                email_subject="Application approved",
+                email_headline=f"{application_ref} has been approved.",
+                email_details=[
+                    f"Application type: {app.application_type.title()}",
+                    f"Approved amount: Rs. {payload.approved_amount:.2f}",
+                ],
             )
         else:
-            db.add(Notification(user_id=app.owner_id, message=f"Your application moved to {next_status.replace('_', ' ')}"))
-    data = app.data or {}
+            queue_portal_notification(
+                db,
+                applicant,
+                message=f"Your application moved to {next_status.replace('_', ' ')}",
+                background_tasks=background_tasks,
+                email_subject="Application moved to next review stage",
+                email_headline=f"{application_ref} moved to the next review stage.",
+                email_details=[
+                    f"Application type: {app.application_type.title()}",
+                    f"New status: {_status_label(next_status)}",
+                ],
+            )
+            next_role = {
+                "department_coordinator": "department_hod",
+                "department_hod": "institution_coordinator",
+            }[role]
+            _queue_review_alerts(
+                db,
+                background_tasks,
+                _reviewers_for_stage(db, next_role, application_department),
+                app,
+                applicant_name,
+                application_department,
+                next_role,
+            )
+
     if payload.action == "reject":
         data["last_reject_remark"] = payload.remark
         data["last_reject_role"] = role
@@ -675,3 +835,5 @@ def review_application(application_id: int, payload: ApplicationReview, db: Sess
     db.commit()
     db.refresh(app)
     return app
+
+

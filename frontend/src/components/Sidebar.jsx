@@ -21,13 +21,13 @@ export default function Sidebar({ items, active, onSelect, user, showToggle = fa
   const roleLabel = formatRole(user?.role);
   return (
     <aside className="panel flex flex-col p-4 md:p-6">
-      <div className="rounded-2xl border border-[#10202c]/15 bg-white/75 p-4">
+      <div className="rounded-2xl border border-[#1E3A8A]/15 bg-white p-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#10202c] to-[#2b6f8f] text-sm font-semibold text-white">
+          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#1E3A8A] to-[#2563EB] text-sm font-semibold text-white">
             {initials}
           </div>
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-[#10202c]">{user?.name || "Portal Menu"}</div>
+            <div className="truncate text-sm font-semibold text-[#1E3A8A]">{user?.name || "Portal Menu"}</div>
             <div className="text-xs uppercase tracking-[0.14em] text-black/50">{roleLabel}</div>
           </div>
         </div>
@@ -49,18 +49,18 @@ export default function Sidebar({ items, active, onSelect, user, showToggle = fa
             onClick={() => onSelect(item)}
             className={`w-full text-left rounded-2xl px-4 py-3 text-sm font-medium transition ${
               active === item
-                ? "bg-gradient-to-r from-[#10202c] to-[#2b6f8f] text-white shadow-[0_12px_24px_rgba(27,26,23,0.22)] ring-1 ring-white/60"
-                : "text-[#2a3a42] hover:bg-[#2b6f8f]/12"
+                ? "bg-gradient-to-r from-[#1E3A8A] to-[#2563EB] text-white shadow-[0_12px_24px_rgba(30,58,138,0.28)] ring-1 ring-white/60"
+                : "text-[#1E3A8A] hover:bg-[#1E3A8A]/10 active:bg-[#1E3A8A]/20"
             }`}
           >
             {item}
           </button>
         ))}
       </nav>
-      <div className="mt-6 rounded-2xl border border-[#10202c]/15 bg-white/75 p-4">
+      <div className="mt-6 rounded-2xl border border-[#1E3A8A]/15 bg-white p-4">
         <div className="text-sm font-semibold">Need help?</div>
         <p className="mt-1 text-xs text-black/60">Contact the incentives office for approval queries.</p>
-        <a className="mt-1 inline-block text-xs text-[#2b6f8f] underline" href="mailto:incentiveinfo@sbjit.edu.in">
+        <a className="mt-1 inline-block text-xs text-[#1E3A8A] underline" href="mailto:incentiveinfo@sbjit.edu.in">
           incentiveinfo@sbjit.edu.in
         </a>
       </div>

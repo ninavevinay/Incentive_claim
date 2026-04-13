@@ -1,26 +1,60 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { handleRegister } from "../lib/auth.jsx";
+import { Link, useNavigate } from "react-router-dom";
+import { handleOtpVerify, useAuth } from "../lib/auth.jsx";
+import { api } from "../lib/api.js";
+import { getDashboardPathForUser } from "../lib/routeMap.js";
 
 export default function AdminRegister() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-    role: "admin",
-    department: "Administration"
-  });
+  const { setUser } = useAuth();
+  const [form, setForm] = useState({ name: "", email: "", password: "", otp: "" });
+  const [otpRequested, setOtpRequested] = useState(false);
+  const [message, setMessage] = useState("");
   const [error, setError] = useState(null);
+  const [sending, setSending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
-  const submit = async (e) => {
+  const requestOtp = async (e) => {
     e.preventDefault();
+    if (sending) return;
+    setSending(true);
+    setError(null);
+    setMessage("");
+    try {
+      const result = await api.requestOtp({
+        email: form.email,
+        password: form.password,
+        purpose: "register",
+        name: form.name,
+        role: "admin",
+        department: "Administration"
+      });
+      setOtpRequested(true);
+      setMessage(result.message || "OTP sent to your email.");
+    } catch (err) {
+      setError(err.message || "Unable to send OTP.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const verifyOtp = async (e) => {
+    e.preventDefault();
+    if (verifying) return;
+    setVerifying(true);
     setError(null);
     try {
-      await handleRegister(form);
-      navigate("/login");
+      const user = await handleOtpVerify({
+        email: form.email,
+        otp: form.otp,
+        purpose: "register"
+      });
+      setUser(user);
+      navigate(getDashboardPathForUser(user));
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "Unable to verify OTP.");
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -29,9 +63,9 @@ export default function AdminRegister() {
       <div className="auth-shell">
         <section className="card p-6 md:p-10">
           <div className="badge">Claim Portal</div>
-          <h1 className="mt-6 text-3xl font-semibold font-display sm:text-4xl">Admin access registration.</h1>
+          <h1 className="mt-6 text-3xl font-semibold font-display sm:text-4xl">Admin access registration</h1>
           <p className="muted mt-3 text-sm">
-            Create an administrative account to manage users, applications, and login activity.
+            Create the first admin account by setting a password and verifying an allowlisted college email with OTP.
           </p>
           <div className="mt-8 grid gap-4 sm:grid-cols-2">
             <div className="kpi">
@@ -40,43 +74,81 @@ export default function AdminRegister() {
               <p className="mt-1 text-xs text-black/60">Manage accounts and authority roles</p>
             </div>
             <div className="kpi">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Control</div>
-              <div className="kpi-value">Claims</div>
-              <p className="mt-1 text-xs text-black/60">View and monitor all submissions</p>
+              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Security</div>
+              <div className="kpi-value">Password + OTP</div>
+              <p className="mt-1 text-xs text-black/60">Only allowlisted admins can self-register</p>
             </div>
           </div>
           <div className="mt-4 panel p-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-black/40">Security</div>
-            <p className="mt-2 text-sm">Audit login events, form windows, and profile maintenance from one console.</p>
+            <div className="text-xs uppercase tracking-[0.2em] text-black/40">Admin Rule</div>
+            <p className="mt-2 text-sm">The email must be in the backend <span className="font-semibold">ADMIN_EMAIL_ALLOWLIST</span>.</p>
           </div>
         </section>
 
         <section className="card p-6 md:p-10">
           <div className="section-eyebrow">Admin Claim Access</div>
-          <h2 className="section-head">Create admin account</h2>
-          <form onSubmit={submit} className="mt-8 space-y-4">
+          <h2 className="section-head">Register admin with Password and OTP</h2>
+          <form className="mt-8 space-y-4" onSubmit={otpRequested ? verifyOtp : requestOtp}>
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-black/40">Full name</label>
-              <input className="input mt-2" required placeholder="Your name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <input
+                className="input mt-2"
+                required
+                placeholder="Your name"
+                value={form.name}
+                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+              />
             </div>
             <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Email</label>
-              <input className="input mt-2" type="email" required placeholder="you@college.edu" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              <label className="text-xs uppercase tracking-[0.2em] text-black/40">College Email</label>
+              <input
+                className="input mt-2"
+                type="email"
+                required
+                placeholder="admin@sbjit.edu.in"
+                value={form.email}
+                onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
+              />
             </div>
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-black/40">Password</label>
-              <input className="input mt-2" type="password" required placeholder="At least 6 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+              <input
+                className="input mt-2"
+                type="password"
+                required
+                minLength={6}
+                placeholder="Create a password"
+                value={form.password}
+                onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
+              />
             </div>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Role</label>
-              <input className="input mt-2" value="Admin" disabled />
+            <div className="rounded-2xl border border-black/10 bg-white/70 p-4 text-sm text-black/70">
+              Role: <span className="font-semibold text-black">Admin</span><br />
+              Department: <span className="font-semibold text-black">Administration</span>
             </div>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Department</label>
-              <input className="input mt-2" value="Administration" disabled />
-            </div>
-            {error && <div className="text-rose-600 text-sm">{error}</div>}
-            <button className="btn btn-primary w-full" type="submit">Register Admin</button>
+            {otpRequested && (
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-black/40">OTP</label>
+                <input
+                  className="input mt-2"
+                  inputMode="numeric"
+                  required
+                  placeholder="Enter OTP"
+                  value={form.otp}
+                  onChange={(e) => setForm((prev) => ({ ...prev, otp: e.target.value }))}
+                />
+              </div>
+            )}
+            {message && <div className="text-sm text-emerald-700">{message}</div>}
+            {error && <div className="text-sm text-rose-600">{error}</div>}
+            <button className="btn btn-primary w-full" type="submit" disabled={sending || verifying}>
+              {otpRequested ? (verifying ? "Verifying..." : "Verify OTP & Create Account") : (sending ? "Sending OTP..." : "Send OTP")}
+            </button>
+            {otpRequested && (
+              <button className="btn btn-ghost w-full" type="button" onClick={requestOtp} disabled={sending || verifying}>
+                {sending ? "Resending..." : "Resend OTP"}
+              </button>
+            )}
           </form>
           <p className="mt-6 text-sm text-black/60">
             Already have an account? <Link className="text-black underline" to="/login">Login</Link>

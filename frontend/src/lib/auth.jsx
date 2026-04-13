@@ -30,6 +30,7 @@ function writeStoredUser(user) {
 export function AuthProvider({ children }) {
   const [user, setUserState] = useState(() => readStoredUser());
   const [loading, setLoading] = useState(true);
+
   const setUser = (nextUser) => {
     setUserState((prevUser) => {
       const resolvedUser = typeof nextUser === "function" ? nextUser(prevUser) : nextUser;
@@ -73,8 +74,10 @@ export async function handleLogin(payload) {
   return api.me();
 }
 
-export async function handleRegister(payload) {
-  return api.register(payload);
+export async function handleOtpVerify(payload) {
+  const { access_token } = await api.verifyOtp(payload);
+  setToken(access_token);
+  return api.me();
 }
 
 export function logout(setUser) {

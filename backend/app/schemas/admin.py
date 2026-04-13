@@ -1,4 +1,4 @@
-from datetime import datetime, date
+﻿from datetime import datetime, date
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -34,11 +34,6 @@ class PasswordResetOut(BaseModel):
 
     class Config:
         from_attributes = True
-
-class AdminPasswordUpdate(BaseModel):
-    user_id: int
-    new_password: str
-
 
 class AdminCreateAuthorityUser(BaseModel):
     name: str = Field(min_length=2, max_length=120)
