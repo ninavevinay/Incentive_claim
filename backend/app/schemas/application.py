@@ -7,11 +7,13 @@ class StudentApplicationCreate(BaseModel):
     usn: str
     mobile_number: str
     academic_year: str
+    academic_year_type: str
     semester: str
     email: str
     incentive_claim_count: int
     course_platform: str
     course_title: str
+    nptel_application_number: str
     course_session: str
     course_weeks: int
     course_score: str
@@ -33,11 +35,14 @@ class FacultyApplicationCreate(BaseModel):
     department: str
     applicant_name: str
     mobile_number: str
+    academic_year: str
+    academic_year_type: str
     email: str
     designation: str
     incentive_claim_count: int
     course_platform: str
     course_title: str
+    nptel_application_number: str
     course_session: str
     course_weeks: int
     course_score: str

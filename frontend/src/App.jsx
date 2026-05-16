@@ -10,6 +10,7 @@ import AuthorityDashboard from "./pages/AuthorityDashboard.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import { AuthProvider, useAuth } from "./lib/auth.jsx";
 import { getDashboardPathForUser, slugifyDepartment } from "./lib/routeMap.js";
+import { AppHeader, AppFooter } from "./components/layout/index.js";
 
 function getSeoForPath(pathname) {
   if (pathname.startsWith("/login")) {
@@ -131,67 +132,12 @@ export default function App() {
 
   return (
     <AuthProvider>
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
-        {/* Header */}
-        <header className="sticky top-0 z-30 border-b border-black/5 bg-white/80 px-4 py-3 backdrop-blur-md sm:px-6 md:px-8 lg:px-10">
-          <div className="mx-auto max-w-7xl">
-            <div className="flex items-center justify-between gap-4">
-              {/* Logo and Institution */}
-              <div className="flex min-w-0 flex-1 items-center gap-3">
-                <div className="relative">
-                  <div className="absolute inset-0 rounded-full bg-gradient-to-r from-[#1E3A8A]/20 to-[#1E3A8A]/5 blur-sm"></div>
-                  <img
-                    src="/logo.jpg"
-                    alt="SB Jain Institute"
-                    className="relative h-12 w-12 rounded-full border-2 border-white bg-white object-contain shadow-lg sm:h-14 sm:w-14"
-                  />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-[#1E3A8A]/60 sm:text-xs">
-                    S.B. Jain Institute
-                  </div>
-                  <div className="truncate text-sm font-semibold text-[#1E3A8A] sm:text-base md:text-lg">
-                    Technology Management and Research
-                  </div>
-                </div>
-              </div>
-
-              {/* Mobile Menu Button */}
-              {isDashboardRoute && (
-                <button
-                  type="button"
-                  className="rounded-lg border border-black/10 bg-white/80 p-2 text-black/60 transition-all hover:bg-white hover:text-black lg:hidden"
-                  onClick={toggleMobileMenu}
-                  aria-label="Toggle menu"
-                >
-                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
-                  </svg>
-                </button>
-              )}
-
-              {/* Badge */}
-              <div className="hidden items-center gap-2 rounded-full bg-gradient-to-r from-[#1E3A8A]/5 to-[#1E3A8A]/10 px-4 py-2 sm:flex">
-                <div className="h-1.5 w-1.5 rounded-full bg-green-500"></div>
-                <span className="text-xs font-semibold uppercase tracking-wider text-[#1E3A8A]">
-                  Incentive Portal
-                </span>
-              </div>
-            </div>
-
-            {/* Mobile Menu Dropdown */}
-            {mobileNavOpen && !isDashboardRoute && (
-              <div className="mt-3 rounded-xl border border-black/10 bg-white/90 px-4 py-3 backdrop-blur-sm sm:hidden">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-[#1E3A8A]">
-                    Incentive Portal
-                  </span>
-                  <div className="h-1.5 w-1.5 rounded-full bg-green-500"></div>
-                </div>
-              </div>
-            )}
-          </div>
-        </header>
+      <div className="app-shell">
+        <AppHeader
+          isDashboardRoute={isDashboardRoute}
+          mobileNavOpen={mobileNavOpen}
+          onToggleMobileMenu={toggleMobileMenu}
+        />
 
         {/* Main Content */}
         <main className="flex-1">
@@ -271,42 +217,7 @@ export default function App() {
           </Routes>
         </main>
 
-        {/* Footer */}
-        <footer className="mt-auto border-t border-black/5 bg-white/80 px-4 py-4 backdrop-blur-sm sm:px-6 md:px-8 lg:px-10">
-          <div className="mx-auto max-w-7xl">
-            <div className="flex flex-col items-center justify-between gap-4 text-center sm:flex-row sm:text-left">
-              {/* Left Section */}
-              <div className="flex items-center gap-3">
-                <img
-                  src="/logo.jpg"
-                  alt="SB Jain"
-                  className="h-8 w-8 rounded-full border border-[#1E3A8A]/15 bg-white object-contain shadow-sm sm:h-10 sm:w-10"
-                />
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-[#1E3A8A]/60 sm:text-xs">
-                    Incentive Claim System
-                  </div>
-                  <div className="text-[9px] text-black/40 sm:text-[10px]">
-                    Version 1.0
-                  </div>
-                </div>
-              </div>
-
-              {/* Center Section */}
-              <div className="text-center text-[10px] uppercase tracking-wider text-black/50 sm:text-xs">
-                Developed by{" "}
-                <span className="font-semibold text-[#1E3A8A] transition-colors hover:text-[#1E3A8A]/80">
-                  Vinay Ninave
-                </span>
-              </div>
-
-              {/* Right Section */}
-              <div className="text-[10px] text-black/40 sm:text-xs">
-                © {new Date().getFullYear()} All rights reserved
-              </div>
-            </div>
-          </div>
-        </footer>
+        <AppFooter />
       </div>
     </AuthProvider>
   );

@@ -2,7 +2,6 @@ from collections.abc import Sequence
 from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 from app.core.email import send_email
-from app.models.notification import Notification
 from app.models.user import User
 
 
@@ -12,8 +11,9 @@ def _truncate_notification_message(message: str, limit: int = 255) -> str:
     return f"{message[: limit - 3].rstrip()}..."
 
 
-def _build_email_body(recipient: User, headline: str, details: Sequence[str] | None = None) -> str:
-    lines = [f"Hello {recipient.name},", "", headline.strip()]
+def _build_email_body(recipient_name: str, headline: str, details: Sequence[str] | None = None) -> str:
+    safe_name = str(recipient_name or "").strip() or "Applicant"
+    lines = [f"Hello {safe_name},", "", headline.strip()]
     if details:
         visible_details = [detail.strip() for detail in details if detail and detail.strip()]
         if visible_details:
@@ -21,8 +21,9 @@ def _build_email_body(recipient: User, headline: str, details: Sequence[str] | N
             lines.extend(f"- {detail}" for detail in visible_details)
     lines.extend([
         "",
-        "This is an automated update from the SBJIT Incentive Portal.",
-        "Portal Team",
+        "This is an automated notification from the SBJIT Incentive Portal. Please do not reply to this email.",
+        "For support, contact incentiveinfo@sbjit.edu.in.",
+        "SBJIT Incentive Portal Team",
     ])
     return "\n".join(lines)
 
@@ -45,15 +46,23 @@ def queue_portal_notification(
     email_subject: str | None = None,
     email_headline: str | None = None,
     email_details: Sequence[str] | None = None,
+    email_to: str | None = None,
+    email_recipient_name: str | None = None,
 ) -> None:
-    db.add(Notification(user_id=recipient.id, message=_truncate_notification_message(message)))
+    # Dashboard notifications are intentionally disabled.
+    # Keep email delivery support below for flows that still require email.
 
     if background_tasks is None or not email_subject:
         return
 
+    target_email = str(email_to or recipient.email or "").strip().lower()
+    if not target_email:
+        return
+    target_name = str(email_recipient_name or recipient.name or "").strip() or "Applicant"
+
     background_tasks.add_task(
         _send_email_safely,
-        recipient.email,
+        target_email,
         email_subject,
-        _build_email_body(recipient, email_headline or message, email_details),
+        _build_email_body(target_name, email_headline or message, email_details),
     )

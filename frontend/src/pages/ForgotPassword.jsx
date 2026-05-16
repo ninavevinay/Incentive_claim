@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api.js";
 
 export default function ForgotPassword() {
+  const navigate = useNavigate();
   const [form, setForm] = useState({
     email: "",
     otp: "",
@@ -50,13 +51,11 @@ export default function ForgotPassword() {
         otp: form.otp,
         new_password: form.newPassword
       });
-      setMessage(result.message || "Password reset successful. Please login with your new password.");
-      setForm((prev) => ({
-        ...prev,
-        otp: "",
-        newPassword: "",
-        confirmPassword: ""
-      }));
+      const successMessage = result.message || "Password reset successful. Please login with your new password.";
+      navigate("/login", {
+        replace: true,
+        state: { successMessage }
+      });
     } catch (err) {
       setError(err.message || "Unable to reset password.");
     } finally {
@@ -65,7 +64,7 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen px-3 py-6 sm:px-4 md:px-8 md:py-10 lg:px-10">
+    <div className="auth-page">
       <div className="auth-shell">
         <section className="card p-6 md:p-10">
           <div className="badge">Claim Portal</div>

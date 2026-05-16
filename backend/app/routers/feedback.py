@@ -51,3 +51,19 @@ def my_feedback(
         .limit(limit)
         .all()
     )
+
+
+@router.get("/report", response_model=list[FeedbackOut])
+def report_feedback(
+    limit: int = Query(default=500, ge=1, le=2000),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    if user.role not in {"institution_coordinator", "admin"}:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    return (
+        db.query(Feedback)
+        .order_by(Feedback.created_at.desc())
+        .limit(limit)
+        .all()
+    )

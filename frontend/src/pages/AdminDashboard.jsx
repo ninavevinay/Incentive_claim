@@ -3,6 +3,8 @@ import Topbar from "../components/Topbar.jsx";
 import Sidebar from "../components/Sidebar.jsx";
 import { api } from "../lib/api.js";
 import { useAuth, logout } from "../lib/auth.jsx";
+import { drawPdfHeader, getPdfHeaderImageDataUrl } from "../lib/pdfHeader.js";
+import { getStoredMenuSelection, setStoredMenuSelection } from "../lib/dashboardStorage.js";
 
 const AUTHORITY_ROLES = [
   { value: "department_coordinator", label: "Department Coordinator" },
@@ -34,6 +36,8 @@ const ADMIN_SECTIONS = [
   "All Applications",
   "Form Filling Window"
 ];
+const AUTO_REFRESH_MS = 8000;
+const ACTIVE_SECTION_STORAGE_KEY = "incentive:admin:active-section";
 
 export default function AdminDashboard() {
   const { user, setUser } = useAuth();
@@ -49,7 +53,9 @@ export default function AdminDashboard() {
   const [feedbackFilter, setFeedbackFilter] = useState("");
   const [expandedAppId, setExpandedAppId] = useState(null);
   const [viewMode, setViewMode] = useState("list");
-  const [activeSection, setActiveSection] = useState("Register Authority");
+  const [activeSection, setActiveSection] = useState(() =>
+    getStoredMenuSelection(ACTIVE_SECTION_STORAGE_KEY, "Register Authority", ADMIN_SECTIONS)
+  );
   const [formWindowForm, setFormWindowForm] = useState({ start_date: "", end_date: "" });
   const [formWindowMessage, setFormWindowMessage] = useState("");
   const [applicationsMessage, setApplicationsMessage] = useState({ type: "", text: "" });
@@ -86,8 +92,43 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    loadAdminData().catch((err) => setError(err.message || "Failed to load admin data"));
+    let cancelled = false;
+    const syncAdminData = async () => {
+      try {
+        await loadAdminData();
+        if (!cancelled) {
+          setError("");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message || "Failed to load admin data");
+        }
+      }
+    };
+    syncAdminData();
+    const interval = setInterval(syncAdminData, AUTO_REFRESH_MS);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        syncAdminData();
+      }
+    };
+    window.addEventListener("focus", syncAdminData);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener("focus", syncAdminData);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!ADMIN_SECTIONS.includes(activeSection)) {
+      setActiveSection("Register Authority");
+      return;
+    }
+    setStoredMenuSelection(ACTIVE_SECTION_STORAGE_KEY, activeSection);
+  }, [activeSection]);
 
   useEffect(() => {
     const handleToggle = () => setSidebarOpen((prev) => !prev);
@@ -266,15 +307,19 @@ export default function AdminDashboard() {
       const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
       const margin = 36;
       const generatedAt = new Date();
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(16);
-      doc.text("User Feedback Report", margin, 42);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.text(`Generated: ${generatedAt.toLocaleString()}`, margin, 58);
-      doc.text(`Total feedback entries: ${feedbackEntries.length}`, margin, 72);
+      const generatedAtText = generatedAt.toLocaleString();
+      const headerImageDataUrl = await getPdfHeaderImageDataUrl().catch(() => null);
+      const headerConfig = {
+        margin,
+        title: "User Feedback Report",
+        subtitle: "S. B. Jain Institute of Technology, Management & Research, Nagpur",
+        metadataLines: [
+          `Generated: ${generatedAtText}`,
+          `Total feedback entries: ${feedbackEntries.length}`
+        ],
+        headerImageDataUrl
+      };
+      const tableStartY = drawPdfHeader(doc, headerConfig);
 
       const tableHead = [[
         "Sr No",
@@ -301,20 +346,20 @@ export default function AdminDashboard() {
       ]);
 
       autoTable(doc, {
-        startY: 82,
-        margin: { left: margin, right: margin },
+        startY: tableStartY,
+        margin: { left: margin, right: margin, top: tableStartY },
         head: tableHead,
         body: tableBody,
         theme: "grid",
         styles: {
-          font: "helvetica",
+          font: "times",
           fontSize: 8,
           cellPadding: 3,
           valign: "top",
           textColor: 30
         },
         headStyles: {
-          fillColor: [30, 30, 30],
+          fillColor: [31, 41, 55],
           textColor: 255,
           fontStyle: "bold"
         },
@@ -330,6 +375,16 @@ export default function AdminDashboard() {
           8: { cellWidth: 72 }
         },
         didDrawPage: (data) => {
+          if (data.pageNumber > 1) {
+            drawPdfHeader(doc, {
+              ...headerConfig,
+              metadataLines: [
+                `Generated: ${generatedAtText}`,
+                `Total feedback entries: ${feedbackEntries.length}`,
+                `Page ${data.pageNumber}`
+              ]
+            });
+          }
           const pageCount = doc.internal.getNumberOfPages();
           doc.setFontSize(9);
           doc.setTextColor(80);
@@ -360,8 +415,8 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="min-h-screen px-3 py-4 sm:px-4 sm:py-6 md:px-8 md:py-8 lg:min-h-screen lg:px-10">
-      <div className="mx-auto w-full max-w-7xl lg:max-w-none">
+    <div className="dashboard-page">
+      <div className="page-container">
         <div className="mb-4 lg:hidden">
           <div>
             <div className="text-xs uppercase tracking-[0.3em] text-black/40">Admin</div>

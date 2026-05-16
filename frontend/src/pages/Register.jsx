@@ -79,7 +79,7 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen px-3 py-6 sm:px-4 md:px-8 md:py-10 lg:px-10">
+    <div className="auth-page">
       <div className="auth-shell">
         <section className="card p-6 md:p-10">
           <div className="badge">Claim Portal</div>

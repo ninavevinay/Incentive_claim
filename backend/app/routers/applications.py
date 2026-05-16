@@ -50,6 +50,10 @@ def _norm(value: str | None) -> str:
 
 
 MAX_UPLOAD_BYTES = 150 * 1024
+PDF_UPLOAD_EXTENSIONS = {".pdf"}
+PDF_UPLOAD_CONTENT_TYPES = {"application/pdf"}
+SIGNATURE_UPLOAD_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+SIGNATURE_UPLOAD_CONTENT_TYPES = {"image/jpeg", "image/png"}
 ROLE_LABELS = {
     "department_coordinator": "Department Coordinator",
     "department_hod": "Department HOD",
@@ -62,6 +66,18 @@ STATUS_LABELS = {
     "approved": "Approved",
     "rejected": "Rejected",
 }
+ALLOWED_COURSE_CATEGORIES = {
+    "ELITE",
+    "ELITE + SILVER",
+    "ELITE + GOLD",
+    "ELITE + SILVER + TOP 5%",
+    "ELITE + SILVER + TOP 2%",
+    "ELITE + SILVER + TOP 1%",
+    "ELITE + GOLD + TOP 5%",
+    "ELITE + GOLD + TOP 2%",
+    "ELITE + GOLD + TOP 1%",
+}
+ALLOWED_ACADEMIC_YEAR_TYPES = {"ODD", "EVEN"}
 
 
 def _role_label(role: str) -> str:
@@ -71,6 +87,42 @@ def _role_label(role: str) -> str:
 
 def _status_label(status: str) -> str:
     return STATUS_LABELS.get(status, status.replace("_", " ").title())
+
+
+def _upper_text(value: str | None) -> str:
+    return str(value or "").strip().upper()
+
+
+def _normalize_email(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
+def _required_upper_text(field_label: str, value: str | None) -> str:
+    text = _upper_text(value)
+    if not text:
+        raise HTTPException(status_code=400, detail=f"{field_label} is required")
+    return text
+
+
+def _required_email(value: str | None) -> str:
+    email = _normalize_email(value)
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    return email
+
+
+def _required_category(value: str | None) -> str:
+    category = _required_upper_text("Course category", value)
+    if category not in ALLOWED_COURSE_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Invalid course category selected")
+    return category
+
+
+def _required_academic_year_type(value: str | None) -> str:
+    academic_year_type = _required_upper_text("Academic year type", value)
+    if academic_year_type not in ALLOWED_ACADEMIC_YEAR_TYPES:
+        raise HTTPException(status_code=400, detail="Academic year type must be ODD or EVEN")
+    return academic_year_type
 
 
 
@@ -101,23 +153,55 @@ def _queue_review_alerts(
             db,
             reviewer,
             message=f"{_application_reference(app)} awaits your review",
-            background_tasks=background_tasks,
-            email_subject="Application awaiting review",
-            email_headline=f"{_application_reference(app)} is awaiting your review.",
-            email_details=[
-                f"Applicant: {applicant_name}",
-                f"Application type: {app.application_type.title()}",
-                f"Department: {department or '-'}",
-                f"Review stage: {_role_label(stage_role)}",
-            ],
+            # Authority users should receive only in-app notifications, not email alerts.
         )
 
 
-def _save_upload(file: UploadFile | None) -> str | None:
+def _safe_filename_token(value: str | None, fallback: str) -> str:
+    raw = str(value or "").strip().lower()
+    token = re.sub(r"[^a-z0-9]+", "_", raw).strip("_")
+    return token or fallback
+
+
+def _preferred_extension_for_content_type(content_type: str) -> str | None:
+    if content_type == "application/pdf":
+        return ".pdf"
+    if content_type == "image/png":
+        return ".png"
+    if content_type == "image/jpeg":
+        return ".jpg"
+    return None
+
+
+def _save_upload(
+    file: UploadFile | None,
+    applicant_name: str,
+    field_name: str,
+    *,
+    allowed_extensions: set[str] | None = None,
+    allowed_content_types: set[str] | None = None,
+    invalid_type_detail: str = "Only PDF files are allowed for uploads",
+) -> str | None:
     if not file:
         return None
-    ext = os.path.splitext(file.filename or "")[1]
-    name = f"{uuid.uuid4().hex}{ext}"
+    allowed_extensions = allowed_extensions or PDF_UPLOAD_EXTENSIONS
+    allowed_content_types = allowed_content_types or PDF_UPLOAD_CONTENT_TYPES
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    content_type = str(file.content_type or "").strip().lower()
+    ext_allowed = ext in allowed_extensions
+    content_type_allowed = content_type in allowed_content_types
+    if not ext_allowed and not content_type_allowed:
+        raise HTTPException(status_code=400, detail=invalid_type_detail)
+
+    final_extension = ext if ext_allowed else (_preferred_extension_for_content_type(content_type) or sorted(allowed_extensions)[0])
+
+    applicant_token = _safe_filename_token(applicant_name, "applicant")
+    field_token = _safe_filename_token(field_name, "document")
+    stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    unique_suffix = uuid.uuid4().hex[:8]
+    name = f"{applicant_token}_{field_token}_{stamp}_{unique_suffix}{final_extension}"
+
+    os.makedirs("uploads", exist_ok=True)
     path = os.path.join("uploads", name)
     size = 0
     with open(path, "wb") as out:
@@ -373,11 +457,13 @@ def create_student_application(
     usn: str = Form(...),
     mobile_number: str = Form(...),
     academic_year: str = Form(...),
+    academic_year_type: str = Form(...),
     semester: str = Form(...),
     email: str = Form(...),
     incentive_claim_count: int = Form(...),
     course_platform: str = Form(...),
     course_title: str = Form(...),
+    nptel_application_number: str = Form(...),
     course_session: str = Form(...),
     course_weeks: int = Form(...),
     course_score: str = Form(...),
@@ -389,9 +475,9 @@ def create_student_application(
     bank_ifsc: str = Form(...),
     bank_branch: str = Form(...),
     bank_name: str = Form(...),
-    fee_receipt_file: UploadFile | None = File(None),
-    certificate_file: UploadFile | None = File(None),
-    bank_passbook_file: UploadFile | None = File(None),
+    fee_receipt_file: UploadFile = File(...),
+    certificate_file: UploadFile = File(...),
+    bank_passbook_file: UploadFile = File(...),
     signature_file: UploadFile | None = File(None),
     declaration_accepted: bool = Form(...),
     db: Session = Depends(get_db),
@@ -412,17 +498,37 @@ def create_student_application(
     )
     if recent_count >= 2:
         raise HTTPException(status_code=400, detail="Only two student applications are allowed in six months")
+    department = _required_upper_text("Department", department)
+    applicant_name = _required_upper_text("Applicant name", applicant_name)
+    usn = _required_upper_text("USN", usn)
+    mobile_number = _required_upper_text("Mobile number", mobile_number)
+    academic_year = _required_upper_text("Academic year", academic_year)
+    academic_year_type = _required_academic_year_type(academic_year_type)
+    semester = _required_upper_text("Semester", semester)
+    email = _required_email(email)
+    course_platform = _required_upper_text("Course platform", course_platform)
+    course_title = _required_upper_text("Course title", course_title)
+    nptel_application_number = _required_upper_text("NPTEL application number", nptel_application_number)
+    course_session = _required_upper_text("Course session", course_session)
+    course_score = _required_upper_text("Course score", course_score)
+    course_category = _required_category(course_category)
+    bank_account_number = _required_upper_text("Bank account number", bank_account_number)
+    bank_ifsc = _required_upper_text("Bank IFSC", bank_ifsc)
+    bank_branch = _required_upper_text("Bank branch", bank_branch)
+    bank_name = _required_upper_text("Bank name", bank_name)
     payload = {
         "department": department,
         "applicant_name": applicant_name,
         "usn": usn,
         "mobile_number": mobile_number,
         "academic_year": academic_year,
+        "academic_year_type": academic_year_type,
         "semester": semester,
         "email": email,
         "incentive_claim_count": incentive_claim_count,
         "course_platform": course_platform,
         "course_title": course_title,
+        "nptel_application_number": nptel_application_number,
         "course_session": course_session,
         "course_weeks": course_weeks,
         "course_score": course_score,
@@ -434,10 +540,17 @@ def create_student_application(
         "bank_ifsc": bank_ifsc,
         "bank_branch": bank_branch,
         "bank_name": bank_name,
-        "fee_receipt_file": _save_upload(fee_receipt_file),
-        "certificate_file": _save_upload(certificate_file),
-        "bank_passbook_file": _save_upload(bank_passbook_file),
-        "signature_file": _save_upload(signature_file),
+        "fee_receipt_file": _save_upload(fee_receipt_file, applicant_name, "fee_receipt"),
+        "certificate_file": _save_upload(certificate_file, applicant_name, "certificate"),
+        "bank_passbook_file": _save_upload(bank_passbook_file, applicant_name, "bank_passbook"),
+        "signature_file": _save_upload(
+            signature_file,
+            applicant_name,
+            "signature",
+            allowed_extensions=SIGNATURE_UPLOAD_EXTENSIONS,
+            allowed_content_types=SIGNATURE_UPLOAD_CONTENT_TYPES,
+            invalid_type_detail="Only JPG or PNG files are allowed for signature upload",
+        ),
         "declaration_accepted": declaration_accepted
     }
     app = Application(owner_id=user.id, application_type="student", status="pending_department_coordinator", data=payload)
@@ -447,14 +560,15 @@ def create_student_application(
     queue_portal_notification(
         db,
         user,
-        message=f"{_application_reference(app)} submitted successfully",
+        message=f"{_application_reference(app)} received and sent for review.",
         background_tasks=background_tasks,
-        email_subject="Application submitted successfully",
-        email_headline="Your student application has been submitted successfully.",
+        email_subject="Application Received - SBJIT Incentive Portal",
+        email_headline="Your student application was submitted successfully and is now under review.",
         email_details=[
             f"Application ID: {app.id}",
             f"Department: {department}",
             f"Current status: {_status_label(app.status)}",
+            "You will receive an email whenever the status changes.",
         ],
     )
     _queue_review_alerts(
@@ -476,11 +590,14 @@ def create_faculty_application(
     department: str = Form(...),
     applicant_name: str = Form(...),
     mobile_number: str = Form(...),
+    academic_year: str = Form(...),
+    academic_year_type: str = Form(...),
     email: str = Form(...),
     designation: str = Form(...),
     incentive_claim_count: int = Form(...),
     course_platform: str = Form(...),
     course_title: str = Form(...),
+    nptel_application_number: str = Form(...),
     course_session: str = Form(...),
     course_weeks: int = Form(...),
     course_score: str = Form(...),
@@ -488,8 +605,8 @@ def create_faculty_application(
     course_credits: int = Form(...),
     registration_fee_paid: float = Form(...),
     permissible_claim: float = Form(...),
-    fee_receipt_file: UploadFile | None = File(None),
-    certificate_file: UploadFile | None = File(None),
+    fee_receipt_file: UploadFile = File(...),
+    certificate_file: UploadFile = File(...),
     signature_file: UploadFile | None = File(None),
     declaration_accepted: bool = Form(...),
     db: Session = Depends(get_db),
@@ -510,15 +627,31 @@ def create_faculty_application(
     )
     if recent_count >= 2:
         raise HTTPException(status_code=400, detail="Only two faculty applications are allowed in six months")
+    department = _required_upper_text("Department", department)
+    applicant_name = _required_upper_text("Applicant name", applicant_name)
+    mobile_number = _required_upper_text("Mobile number", mobile_number)
+    academic_year = _required_upper_text("Academic year", academic_year)
+    academic_year_type = _required_academic_year_type(academic_year_type)
+    email = _required_email(email)
+    designation = _required_upper_text("Designation", designation)
+    course_platform = _required_upper_text("Course platform", course_platform)
+    course_title = _required_upper_text("Course title", course_title)
+    nptel_application_number = _required_upper_text("NPTEL application number", nptel_application_number)
+    course_session = _required_upper_text("Course session", course_session)
+    course_score = _required_upper_text("Course score", course_score)
+    course_category = _required_category(course_category)
     payload = {
         "department": department,
         "applicant_name": applicant_name,
         "mobile_number": mobile_number,
+        "academic_year": academic_year,
+        "academic_year_type": academic_year_type,
         "email": email,
         "designation": designation,
         "incentive_claim_count": incentive_claim_count,
         "course_platform": course_platform,
         "course_title": course_title,
+        "nptel_application_number": nptel_application_number,
         "course_session": course_session,
         "course_weeks": course_weeks,
         "course_score": course_score,
@@ -526,9 +659,16 @@ def create_faculty_application(
         "course_credits": course_credits,
         "registration_fee_paid": registration_fee_paid,
         "permissible_claim": permissible_claim,
-        "fee_receipt_file": _save_upload(fee_receipt_file),
-        "certificate_file": _save_upload(certificate_file),
-        "signature_file": _save_upload(signature_file),
+        "fee_receipt_file": _save_upload(fee_receipt_file, applicant_name, "fee_receipt"),
+        "certificate_file": _save_upload(certificate_file, applicant_name, "certificate"),
+        "signature_file": _save_upload(
+            signature_file,
+            applicant_name,
+            "signature",
+            allowed_extensions=SIGNATURE_UPLOAD_EXTENSIONS,
+            allowed_content_types=SIGNATURE_UPLOAD_CONTENT_TYPES,
+            invalid_type_detail="Only JPG or PNG files are allowed for signature upload",
+        ),
         "declaration_accepted": declaration_accepted
     }
     app = Application(owner_id=user.id, application_type="faculty", status="pending_department_coordinator", data=payload)
@@ -538,14 +678,15 @@ def create_faculty_application(
     queue_portal_notification(
         db,
         user,
-        message=f"{_application_reference(app)} submitted successfully",
+        message=f"{_application_reference(app)} received and sent for review.",
         background_tasks=background_tasks,
-        email_subject="Application submitted successfully",
-        email_headline="Your faculty application has been submitted successfully.",
+        email_subject="Application Received - SBJIT Incentive Portal",
+        email_headline="Your faculty application was submitted successfully and is now under review.",
         email_details=[
             f"Application ID: {app.id}",
             f"Department: {department}",
             f"Current status: {_status_label(app.status)}",
+            "You will receive an email whenever the status changes.",
         ],
     )
     _queue_review_alerts(
@@ -737,6 +878,7 @@ def review_application(application_id: int, payload: ApplicationReview, backgrou
     applicant_name = (data.get("applicant_name") or applicant.name).strip()
     application_department = data.get("department") or applicant.department
     application_ref = _application_reference(app)
+    applicant_email = _normalize_email(data.get("email")) or _normalize_email(applicant.email)
 
     if payload.action == "reject":
         if not payload.remark:
@@ -746,15 +888,18 @@ def review_application(application_id: int, payload: ApplicationReview, backgrou
         queue_portal_notification(
             db,
             applicant,
-            message=f"Your application was rejected by {role_label}. Remark: {payload.remark}",
+            message=f"{application_ref} was not approved by {role_label}. Remark: {payload.remark}",
             background_tasks=background_tasks,
-            email_subject="Application rejected",
-            email_headline=f"{application_ref} was rejected by {role_label}.",
+            email_subject="Application Update - Not Approved",
+            email_headline=f"{application_ref} was reviewed and marked as not approved by {role_label}.",
             email_details=[
                 f"Application type: {app.application_type.title()}",
                 f"Department: {application_department or '-'}",
                 f"Remark: {payload.remark}",
+                "Please update your application details and submit again if eligible.",
             ],
+            email_to=applicant_email,
+            email_recipient_name=applicant_name,
         )
     else:
         if role == "institution_coordinator":
@@ -772,27 +917,33 @@ def review_application(application_id: int, payload: ApplicationReview, backgrou
             queue_portal_notification(
                 db,
                 applicant,
-                message=f"Application ID {app.id} is approved with amount Rs. {payload.approved_amount:.2f}",
+                message=f"{application_ref} approved. Amount: Rs. {payload.approved_amount:.2f}",
                 background_tasks=background_tasks,
-                email_subject="Application approved",
-                email_headline=f"{application_ref} has been approved.",
+                email_subject="Application Approved - SBJIT Incentive Portal",
+                email_headline=f"Good news. {application_ref} has been approved.",
                 email_details=[
                     f"Application type: {app.application_type.title()}",
                     f"Approved amount: Rs. {payload.approved_amount:.2f}",
+                    "Please keep this email for your records.",
                 ],
+                email_to=applicant_email,
+                email_recipient_name=applicant_name,
             )
         else:
             queue_portal_notification(
                 db,
                 applicant,
-                message=f"Your application moved to {next_status.replace('_', ' ')}",
+                message=f"{application_ref} moved to {_status_label(next_status)}.",
                 background_tasks=background_tasks,
-                email_subject="Application moved to next review stage",
-                email_headline=f"{application_ref} moved to the next review stage.",
+                email_subject="Application Update - Moved to Next Stage",
+                email_headline=f"{application_ref} has moved to the next review stage.",
                 email_details=[
                     f"Application type: {app.application_type.title()}",
                     f"New status: {_status_label(next_status)}",
+                    "No action is required from your side at this stage.",
                 ],
+                email_to=applicant_email,
+                email_recipient_name=applicant_name,
             )
             next_role = {
                 "department_coordinator": "department_hod",

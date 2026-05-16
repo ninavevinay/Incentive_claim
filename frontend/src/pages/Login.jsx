@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { handleLogin, useAuth } from "../lib/auth.jsx";
 import { api } from "../lib/api.js";
 import { getDashboardPathForUser } from "../lib/routeMap.js";
@@ -7,17 +7,26 @@ import { getDashboardPathForUser } from "../lib/routeMap.js";
 const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 export default function Login() {
+  const location = useLocation();
   const navigate = useNavigate();
   const { setUser } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState("");
   const [loggingIn, setLoggingIn] = useState(false);
   const [notices, setNotices] = useState([]);
 
   useEffect(() => {
     api.publicNotices().then(setNotices).catch(() => setNotices([]));
   }, []);
+
+  useEffect(() => {
+    const message = location.state?.successMessage;
+    if (!message) return;
+    setSuccessMessage(String(message));
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.state, location.pathname, navigate]);
 
   const submitLogin = async (e) => {
     e.preventDefault();
@@ -36,7 +45,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen px-3 py-6 sm:px-4 md:px-8 md:py-10 lg:px-10">
+    <div className="auth-page">
       <div className="auth-shell">
         <section className="card p-6 md:p-10">
           <div className="badge">Claim Portal</div>
@@ -121,6 +130,7 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
+            {successMessage && <div className="text-sm text-emerald-700">{successMessage}</div>}
             {error && <div className="text-sm text-rose-600">{error}</div>}
             <button className="btn btn-primary w-full" type="submit" disabled={loggingIn}>
               {loggingIn ? "Signing In..." : "Login"}

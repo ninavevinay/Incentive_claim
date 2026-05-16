@@ -4,12 +4,12 @@ import Topbar from "../components/Topbar.jsx";
 import { api } from "../lib/api.js";
 import { useAuth, logout } from "../lib/auth.jsx";
 import { getApprovedAmount, withNotificationAmounts } from "../lib/amount.js";
+import { exportApplicationFormPdf } from "../lib/applicationFormPdf.js";
+import { getStoredMenuSelection, setStoredMenuSelection } from "../lib/dashboardStorage.js";
 
 const menu = [
   "Application Form",
   "My Applications",
-  "Application Track",
-  "Notifications",
   "Feedback",
   "Profile",
   "Delete Account",
@@ -18,20 +18,37 @@ const menu = [
 const AUTO_REFRESH_MS = 5000;
 const MAX_FILE_BYTES = 150 * 1024;
 const MAX_FILE_LABEL = "150KB";
+const ACTIVE_TAB_STORAGE_KEY = "incentive:student:active-tab";
+const CATEGORY_OPTIONS = [
+  "Elite",
+  "Elite + Silver",
+  "Elite + Gold",
+  "Elite + Silver + Top 5%",
+  "Elite + Silver + Top 2%",
+  "Elite + Silver + Top 1%",
+  "Elite + Gold + Top 5%",
+  "Elite + Gold + Top 2%",
+  "Elite + Gold + Top 1%",
+  "NPTEL Super Star",
+  "NPTEL Discipline Star",
+  "NPTEL Domain Scholar",
+  "NPTEL Believer",
+  "NPTEL Enthusiast",
+  "NPTEL Motivated Learner",
+  "NPTEL Evangelist"
+];
 
 export default function StudentDashboard() {
   const { user, setUser } = useAuth();
-  const [active, setActive] = useState(menu[0]);
+  const [active, setActive] = useState(() =>
+    getStoredMenuSelection(ACTIVE_TAB_STORAGE_KEY, menu[0], menu)
+  );
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [apps, setApps] = useState([]);
-  const [notifications, setNotifications] = useState([]);
   const [feedbackList, setFeedbackList] = useState([]);
   const [feedbackForm, setFeedbackForm] = useState({ benefit_status: "beneficial", rating: "5", message: "" });
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [feedbackType, setFeedbackType] = useState("success");
-  const [trackId, setTrackId] = useState("");
-  const [trackResult, setTrackResult] = useState(null);
-  const [trackMessage, setTrackMessage] = useState("");
   const [editingDepartment, setEditingDepartment] = useState(false);
   const [departmentDraft, setDepartmentDraft] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -42,11 +59,13 @@ export default function StudentDashboard() {
     usn: "",
     mobileNumber: "",
     academicYear: "",
+    academicYearType: "ODD",
     semester: "",
     email: "",
     incentiveClaimCount: "00",
     coursePlatform: "",
     courseTitle: "",
+    nptelApplicationNumber: "",
     courseSession: "",
     courseWeeks: "",
     courseScore: "",
@@ -61,11 +80,12 @@ export default function StudentDashboard() {
     feeReceiptFile: null,
     certificateFile: null,
     bankPassbookFile: null,
-    signatureFile: null,
     declarationAccepted: false
   });
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("success");
+  const [applicationsNotice, setApplicationsNotice] = useState("");
+  const [applicationsNoticeType, setApplicationsNoticeType] = useState("success");
   const statusLabel = (status) => {
     switch (status) {
       case "pending_department_coordinator":
@@ -93,7 +113,6 @@ export default function StudentDashboard() {
   const refreshData = async () => {
     const notificationsData = await api.notifications().catch(() => []);
     const appsData = await api.myApplications().catch(() => []);
-    setNotifications(notificationsData);
     setApps(withNotificationAmounts(appsData, notificationsData));
   };
 
@@ -110,18 +129,44 @@ export default function StudentDashboard() {
   }, []);
 
   useEffect(() => {
+    const refreshOnFocus = () => {
+      refreshData();
+      loadFeedback();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshOnFocus();
+      }
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
     const handleToggle = () => setSidebarOpen((prev) => !prev);
     window.addEventListener("portal:toggle-dashboard-menu", handleToggle);
     return () => window.removeEventListener("portal:toggle-dashboard-menu", handleToggle);
   }, []);
 
   useEffect(() => {
-    if (active === "My Applications" || active === "Notifications" || active === "Application Track") {
+    if (active === "My Applications") {
       refreshData();
     }
     if (active === "Feedback") {
       loadFeedback();
     }
+  }, [active]);
+
+  useEffect(() => {
+    if (!menu.includes(active)) {
+      setActive(menu[0]);
+      return;
+    }
+    setStoredMenuSelection(ACTIVE_TAB_STORAGE_KEY, active);
   }, [active]);
 
   const submitFeedback = async (e) => {
@@ -153,8 +198,8 @@ export default function StudentDashboard() {
     setForm((prev) => ({
       ...prev,
       department: prev.department || user.department || "",
-      applicantName: prev.applicantName || user.name || "",
-      email: prev.email || user.email || ""
+      applicantName: toUpperText(prev.applicantName || user.name || ""),
+      email: prev.email || normalizeEmail(user.email || "")
     }));
   }, [user]);
 
@@ -162,13 +207,16 @@ export default function StudentDashboard() {
     setDepartmentDraft(user?.department || "");
   }, [user]);
 
+  const toUpperText = (value) => String(value || "").toUpperCase();
+  const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+
   const submit = async (e) => {
     e.preventDefault();
     setMessage("");
     setMessageType("error");
-    const fixedDepartment = user?.department || form.department;
-    const fixedApplicantName = user?.name || form.applicantName;
-    const fixedEmail = user?.email || form.email;
+    const fixedDepartment = toUpperText(user?.department || form.department);
+    const fixedApplicantName = toUpperText(user?.name || form.applicantName);
+    const fixedEmail = normalizeEmail(user?.email || form.email);
     const sixMonthsAgoMs = Date.now() - (180 * 24 * 60 * 60 * 1000);
     const recentStudentCount = apps.filter((app) => (
       app.application_type === "student" &&
@@ -182,8 +230,7 @@ export default function StudentDashboard() {
     const oversizedFiles = [
       form.feeReceiptFile,
       form.certificateFile,
-      form.bankPassbookFile,
-      form.signatureFile
+      form.bankPassbookFile
     ].filter((file) => file && file.size > MAX_FILE_BYTES);
     if (oversizedFiles.length > 0) {
       const fileNames = oversizedFiles.map((file) => file.name).join(", ");
@@ -193,29 +240,30 @@ export default function StudentDashboard() {
     const data = new FormData();
     data.append("department", fixedDepartment);
     data.append("applicant_name", fixedApplicantName);
-    data.append("usn", form.usn);
-    data.append("mobile_number", form.mobileNumber);
-    data.append("academic_year", form.academicYear);
-    data.append("semester", form.semester);
+    data.append("usn", toUpperText(form.usn));
+    data.append("mobile_number", toUpperText(form.mobileNumber));
+    data.append("academic_year", toUpperText(form.academicYear));
+    data.append("academic_year_type", toUpperText(form.academicYearType));
+    data.append("semester", toUpperText(form.semester));
     data.append("email", fixedEmail);
     data.append("incentive_claim_count", String(form.incentiveClaimCount));
-    data.append("course_platform", form.coursePlatform);
-    data.append("course_title", form.courseTitle);
-    data.append("course_session", form.courseSession);
+    data.append("course_platform", toUpperText(form.coursePlatform));
+    data.append("course_title", toUpperText(form.courseTitle));
+    data.append("nptel_application_number", toUpperText(form.nptelApplicationNumber));
+    data.append("course_session", toUpperText(form.courseSession));
     data.append("course_weeks", String(form.courseWeeks));
-    data.append("course_score", form.courseScore);
-    data.append("course_category", form.courseCategory);
+    data.append("course_score", toUpperText(form.courseScore));
+    data.append("course_category", toUpperText(form.courseCategory));
     data.append("course_credits", String(form.courseCredits));
     data.append("registration_fee_paid", String(form.registrationFeePaid));
     data.append("permissible_claim", String(form.permissibleClaim));
-    data.append("bank_account_number", form.bankAccountNumber);
-    data.append("bank_ifsc", form.bankIfsc);
-    data.append("bank_branch", form.bankBranch);
-    data.append("bank_name", form.bankName);
+    data.append("bank_account_number", toUpperText(form.bankAccountNumber));
+    data.append("bank_ifsc", toUpperText(form.bankIfsc));
+    data.append("bank_branch", toUpperText(form.bankBranch));
+    data.append("bank_name", toUpperText(form.bankName));
     if (form.feeReceiptFile) data.append("fee_receipt_file", form.feeReceiptFile);
     if (form.certificateFile) data.append("certificate_file", form.certificateFile);
     if (form.bankPassbookFile) data.append("bank_passbook_file", form.bankPassbookFile);
-    if (form.signatureFile) data.append("signature_file", form.signatureFile);
     data.append("declaration_accepted", String(form.declarationAccepted));
     try {
       await api.submitStudent(data);
@@ -225,11 +273,13 @@ export default function StudentDashboard() {
         usn: "",
         mobileNumber: "",
         academicYear: "",
+        academicYearType: "ODD",
         semester: "",
-        email: user?.email || "",
+        email: normalizeEmail(user?.email || ""),
         incentiveClaimCount: "00",
         coursePlatform: "",
         courseTitle: "",
+        nptelApplicationNumber: "",
         courseSession: "",
         courseWeeks: "",
         courseScore: "",
@@ -244,7 +294,6 @@ export default function StudentDashboard() {
         feeReceiptFile: null,
         certificateFile: null,
         bankPassbookFile: null,
-        signatureFile: null,
         declarationAccepted: false
       });
       setMessageType("success");
@@ -254,32 +303,6 @@ export default function StudentDashboard() {
       const tooLarge = err?.status === 413 || /file too large/i.test(err?.message || "");
       setMessageType("error");
       setMessage(tooLarge ? `File too large. Max ${MAX_FILE_LABEL} per file.` : (err.message || "Failed to submit application."));
-    }
-  };
-
-  const track = async () => {
-    const id = trackId.trim();
-    if (!id) {
-      setTrackResult(null);
-      setTrackMessage("Please enter an application ID.");
-      return;
-    }
-    setTrackMessage("");
-    setTrackResult(null);
-    try {
-      const result = await api.track(id);
-      const [enriched] = withNotificationAmounts([result], notifications);
-      setTrackResult(enriched || result);
-    } catch (err) {
-      if (err.status === 404) {
-        setTrackMessage("Application not found. Please check the ID and try again.");
-        return;
-      }
-      if (err.status === 401) {
-        setTrackMessage("Your session has expired. Please login again.");
-        return;
-      }
-      setTrackMessage(err.message || "Unable to track application right now.");
     }
   };
 
@@ -303,6 +326,18 @@ export default function StudentDashboard() {
     }
   };
 
+  const printApplicationForm = async (app) => {
+    setApplicationsNotice("");
+    try {
+      await exportApplicationFormPdf(app);
+      setApplicationsNoticeType("success");
+      setApplicationsNotice(`Application form PDF exported for ID ${app?.id || "-"}.`);
+    } catch (err) {
+      setApplicationsNoticeType("error");
+      setApplicationsNotice(err?.message || "Failed to export application form PDF.");
+    }
+  };
+
   const handleSelect = (item) => {
     if (item === "Logout") {
       logout(setUser);
@@ -320,11 +355,11 @@ export default function StudentDashboard() {
   const studentLimitReached = studentSubmissionCountInSixMonths >= 2;
 
   return (
-    <div className="min-h-screen px-3 py-4 sm:px-4 sm:py-6 md:px-8 md:py-8 lg:min-h-screen lg:px-10">
-      <div className="mx-auto w-full max-w-7xl lg:max-w-none">
+    <div className="dashboard-page">
+      <div className="page-container">
         <div className="mb-4 lg:hidden">
           <div>
-            <div className="text-lg font-semibold font-display">Incentive Portal</div>
+            <div className="text-lg font-bold font-display text-[color:var(--primary-deep)]">Incentive Portal</div>
           </div>
         </div>
 
@@ -336,44 +371,39 @@ export default function StudentDashboard() {
           <Topbar title={`Student Portal`} subtitle={`Hello ${user?.name || ""}`} />
           {active !== "Application Form" && (
             <div className="dashboard-kpi-grid">
-              <div className="panel p-4">
-                <div className="text-xs uppercase tracking-[0.2em] text-black/40">Applications</div>
-                <div className="mt-3 text-2xl font-semibold">{apps.length}</div>
-                <div className="muted text-xs">Submitted by you</div>
+              <div className="stat-card">
+                <div className="stat-card-label">Applications</div>
+                <div className="stat-card-value">{apps.length}</div>
+                <div className="stat-card-sub">Submitted by you</div>
               </div>
-              <div className="panel p-4">
-                <div className="text-xs uppercase tracking-[0.2em] text-black/40">Notifications</div>
-                <div className="mt-3 text-2xl font-semibold">{notifications.length}</div>
-                <div className="muted text-xs">Unread + read</div>
+              <div className="stat-card">
+                <div className="stat-card-label">Role</div>
+                <div className="stat-card-value text-xl capitalize">{user?.role || "student"}</div>
+                <div className="stat-card-sub">Active profile</div>
               </div>
-              <div className="panel p-4">
-                <div className="text-xs uppercase tracking-[0.2em] text-black/40">Role</div>
-                <div className="mt-3 text-lg font-semibold capitalize">{user?.role || "student"}</div>
-                <div className="muted text-xs">Active profile</div>
-              </div>
-              <div className="panel p-4">
-                <div className="text-xs uppercase tracking-[0.2em] text-black/40">Department</div>
-                <div className="mt-3 text-lg font-semibold">{user?.department || "-"}</div>
-                <div className="muted text-xs">Current unit</div>
+              <div className="stat-card">
+                <div className="stat-card-label">Department</div>
+                <div className="stat-card-value text-xl">{user?.department || "-"}</div>
+                <div className="stat-card-sub">Current unit</div>
               </div>
             </div>
           )}
 
           {active === "Application Form" && (
-            <div className="mt-8">
-              <div className="panel p-6">
-                <h2 className="text-xl font-semibold font-display">Student Application Form</h2>
+            <div className="mt-8 animate-slide-up">
+              <div className="section-card">
+                <h2 className="text-xl font-bold font-display text-[color:var(--primary-deep)]">Student Application Form</h2>
                 <p className="muted mt-2 text-sm">Fill in all required fields for the academic year incentive application.</p>
                 {studentLimitReached && (
-                  <div className="mt-4 rounded-2xl border border-amber-300/60 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
+                  <div className="alert-warning mt-4">
                     You have already submitted 2 student applications in the last six months. You cannot submit more.
                   </div>
                 )}
-                <form onSubmit={submit} className="mt-6 space-y-5 pb-24 sm:mt-8 sm:space-y-8">
-                  <div className="rounded-3xl border border-black/10 bg-white/60 p-4 sm:p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
-                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-black/50">Applicant Details</div>
-                      <div className="muted text-xs">Basic identification</div>
+                <form onSubmit={submit} className="mt-6 space-y-5 pb-24 sm:mt-8 sm:space-y-6">
+                  <div className="form-section">
+                    <div className="form-section-header">
+                      <div className="form-section-title">Applicant Details</div>
+                      <div className="form-section-subtitle">Basic identification</div>
                     </div>
                     <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
                       <div>
@@ -382,7 +412,7 @@ export default function StudentDashboard() {
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Applicant Name</label>
-                        <input className="input mt-2 bg-black/5 font-semibold" value={form.applicantName} readOnly required />
+                        <input className="input mt-2 bg-black/5 font-semibold" value={toUpperText(form.applicantName)} readOnly required />
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">USN</label>
@@ -399,6 +429,23 @@ export default function StudentDashboard() {
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year</label>
                         <input className="input mt-2" value={form.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} required placeholder="eg., 2025-2026" />
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year Type</label>
+                        <div className="mt-3 flex flex-wrap gap-4 text-sm text-black/70">
+                          {["ODD", "EVEN"].map((yearType) => (
+                            <label key={yearType} className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                name="studentAcademicYearType"
+                                value={yearType}
+                                checked={form.academicYearType === yearType}
+                                onChange={(e) => setForm({ ...form, academicYearType: e.target.value })}
+                              />
+                              {yearType}
+                            </label>
+                          ))}
+                        </div>
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Email ID</label>
@@ -424,10 +471,10 @@ export default function StudentDashboard() {
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-black/10 bg-white/60 p-4 sm:p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
-                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-black/50">Course Details</div>
-                      <div className="muted text-xs">Certification information</div>
+                  <div className="form-section">
+                    <div className="form-section-header">
+                      <div className="form-section-title">Course Details</div>
+                      <div className="form-section-subtitle">Certification information</div>
                     </div>
                     <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
                       <div>
@@ -437,6 +484,16 @@ export default function StudentDashboard() {
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Title of Course</label>
                         <input className="input mt-2" placeholder="e.g., GenAI" value={form.courseTitle} onChange={(e) => setForm({ ...form, courseTitle: e.target.value })} required />
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">NPTEL Application Number</label>
+                        <input
+                          className="input mt-2 uppercase"
+                          value={form.nptelApplicationNumber}
+                          onChange={(e) => setForm({ ...form, nptelApplicationNumber: toUpperText(e.target.value) })}
+                          required
+                          placeholder="e.g., NPTEL-APP-12345"
+                        />
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Session</label>
@@ -452,7 +509,17 @@ export default function StudentDashboard() {
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Category</label>
-                        <input className="input mt-2" placeholder="eg., Elite, Sliver, Top 1%, etc..." value={form.courseCategory} onChange={(e) => setForm({ ...form, courseCategory: e.target.value })} required />
+                        <select
+                          className="input mt-2"
+                          value={form.courseCategory}
+                          onChange={(e) => setForm({ ...form, courseCategory: e.target.value })}
+                          required
+                        >
+                          <option value="" disabled>Select category</option>
+                          {CATEGORY_OPTIONS.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Credits</label>
@@ -461,10 +528,10 @@ export default function StudentDashboard() {
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-black/10 bg-white/60 p-4 sm:p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
-                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-black/50">Registration Details</div>
-                      <div className="muted text-xs">Fee + claim</div>
+                  <div className="form-section">
+                    <div className="form-section-header">
+                      <div className="form-section-title">Registration Details</div>
+                      <div className="form-section-subtitle">Fee + claim</div>
                     </div>
                     <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
                       <div>
@@ -478,10 +545,10 @@ export default function StudentDashboard() {
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-black/10 bg-white/60 p-4 sm:p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
-                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-black/50">Bank Details</div>
-                      <div className="muted text-xs">For reimbursement</div>
+                  <div className="form-section">
+                    <div className="form-section-header">
+                      <div className="form-section-title">Bank Details</div>
+                      <div className="form-section-subtitle">For reimbursement</div>
                     </div>
                     <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
                       <div>
@@ -503,10 +570,10 @@ export default function StudentDashboard() {
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-black/10 bg-white/60 p-4 sm:p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
-                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-black/50">Documents Attached</div>
-                      <div className="muted text-xs">Upload proofs</div>
+                  <div className="form-section">
+                    <div className="form-section-header">
+                      <div className="form-section-title">Documents Attached</div>
+                      <div className="form-section-subtitle">Upload proofs</div>
                     </div>
                     <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
                       <div>
@@ -514,7 +581,9 @@ export default function StudentDashboard() {
                         <input
                           className="input mt-2"
                           type="file"
+                          accept=".pdf,application/pdf"
                           onChange={(e) => setForm({ ...form, feeReceiptFile: e.target.files?.[0] || null })}
+                          required
                         />
                         {form.feeReceiptFile && <div className="muted mt-1 text-xs">{form.feeReceiptFile?.name}</div>}
                       </div>
@@ -523,7 +592,9 @@ export default function StudentDashboard() {
                         <input
                           className="input mt-2"
                           type="file"
+                          accept=".pdf,application/pdf"
                           onChange={(e) => setForm({ ...form, certificateFile: e.target.files?.[0] || null })}
+                          required
                         />
                         {form.certificateFile && <div className="muted mt-1 text-xs">{form.certificateFile?.name}</div>}
                       </div>
@@ -532,26 +603,19 @@ export default function StudentDashboard() {
                         <input
                           className="input mt-2"
                           type="file"
+                          accept=".pdf,application/pdf"
                           onChange={(e) => setForm({ ...form, bankPassbookFile: e.target.files?.[0] || null })}
+                          required
                         />
                         {form.bankPassbookFile && <div className="muted mt-1 text-xs">{form.bankPassbookFile?.name}</div>}
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Signature (Max 150KB)</label>
-                        <input
-                          className="input mt-2"
-                          type="file"
-                          onChange={(e) => setForm({ ...form, signatureFile: e.target.files?.[0] || null })}
-                        />
-                        {form.signatureFile && <div className="muted mt-1 text-xs">{form.signatureFile?.name}</div>}
                       </div>
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-black/10 bg-white/60 p-4 sm:p-5 shadow-[0_18px_40px_rgba(15,18,33,0.08)]">
-                    <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="text-sm font-semibold uppercase tracking-[0.2em] text-black/50">Declaration</div>
-                      <div className="muted text-xs">Required to submit</div>
+                  <div className="form-section">
+                    <div className="form-section-header">
+                      <div className="form-section-title">Declaration</div>
+                      <div className="form-section-subtitle">Required to submit</div>
                     </div>
                     <div className="mt-4 space-y-2 text-sm text-black/70">
                       <div>1. Credits earned by me shall be assigned to the Institute.</div>
@@ -584,10 +648,12 @@ export default function StudentDashboard() {
                           mobileNumber: "",
                           semester: "",
                           academicYear: "",
-                          email: user?.email || "",
+                          academicYearType: "ODD",
+                          email: normalizeEmail(user?.email || ""),
                           incentiveClaimCount: "00",
                           coursePlatform: "",
                           courseTitle: "",
+                          nptelApplicationNumber: "",
                           courseSession: "",
                           courseWeeks: "",
                           courseScore: "",
@@ -602,7 +668,6 @@ export default function StudentDashboard() {
                           feeReceiptFile: null,
                           certificateFile: null,
                           bankPassbookFile: null,
-                          signatureFile: null,
                           declarationAccepted: false
                         })}
                       >
@@ -621,14 +686,19 @@ export default function StudentDashboard() {
           )}
 
           {active === "My Applications" && (
-            <div className="mt-8">
+            <div className="mt-8 animate-slide-up">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold font-display">My Applications</h2>
+                <h2 className="text-xl font-bold font-display text-[color:var(--primary-deep)]">My Applications</h2>
                 <div className="flex items-center gap-3">
                   <button className="btn btn-ghost" type="button" onClick={refreshData}>Refresh</button>
                   <div className="muted text-sm">{apps.length} total</div>
                 </div>
               </div>
+              {applicationsNotice && (
+                <div className={`mt-3 text-sm ${applicationsNoticeType === "error" ? "text-rose-600" : "text-emerald-600"}`}>
+                  {applicationsNotice}
+                </div>
+              )}
               <div className="mt-4 grid gap-4">
                 {apps.map((app) => (
                   <div key={app.id} className="panel p-4">
@@ -645,12 +715,12 @@ export default function StudentDashboard() {
                         return (
                           <span
                             key={step.key}
-                            className={`rounded-full px-3 py-1 ${
+                            className={`flow-step ${
                               isRejected
-                                ? "bg-rose-100 text-rose-700"
+                                ? "flow-step-rejected"
                                 : reached
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : "bg-black/5 text-black/50"
+                                  ? "flow-step-done"
+                                  : "flow-step-pending"
                             }`}
                           >
                             {step.label}
@@ -665,7 +735,9 @@ export default function StudentDashboard() {
                       <div><span className="text-black/50">Mobile:</span> {app.data.mobile_number || "-"}</div>
                       <div><span className="text-black/50">Semester:</span> {app.data.semester || "-"}</div>
                       <div><span className="text-black/50">Academic Year:</span> {app.data.academic_year || "-"}</div>
+                      <div><span className="text-black/50">Academic Year Type:</span> {app.data.academic_year_type || "-"}</div>
                       <div><span className="text-black/50">Course:</span> {app.data.course_title || "-"}</div>
+                      <div><span className="text-black/50">NPTEL Application No:</span> {app.data.nptel_application_number || "-"}</div>
                       <div><span className="text-black/50">Platform:</span> {app.data.course_platform || "-"}</div>
                       <div><span className="text-black/50">Score:</span> {app.data.course_score || "-"}</div>
                       <div><span className="text-black/50">Credits:</span> {app.data.course_credits ?? "-"}</div>
@@ -673,42 +745,11 @@ export default function StudentDashboard() {
                       <div><span className="text-black/50">Permissible Claim:</span> {app.data.permissible_claim ?? "-"}</div>
                       <div><span className="text-black/50">Approved Amount:</span> {getApprovedAmount(app)}</div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {active === "Application Track" && (
-            <div className="mt-8">
-              <h2 className="text-xl font-semibold font-display">Track Application</h2>
-              <p className="muted mt-2 text-sm">Enter the application ID to view the current status.</p>
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                <input className="input flex-1" placeholder="Application ID" value={trackId} onChange={(e) => setTrackId(e.target.value)} />
-                <button className="btn btn-ghost" onClick={track}>Track</button>
-              </div>
-              {trackMessage && <div className="mt-3 text-sm text-rose-600">{trackMessage}</div>}
-              {trackResult && (
-                <div className="mt-4 panel p-4">
-                  <div className="text-sm font-semibold">Application {trackResult.id}</div>
-                  <div className="muted mt-1 text-sm">Status: {trackResult.status}</div>
-                  <div className="muted mt-1 text-sm">Approved Amount: {getApprovedAmount(trackResult)}</div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {active === "Notifications" && (
-            <div className="mt-8">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold font-display">Notifications</h2>
-                <button className="btn btn-ghost" type="button" onClick={refreshData}>Refresh</button>
-              </div>
-              <div className="mt-4 space-y-3">
-                {notifications.map((n) => (
-                  <div key={n.id} className={`panel p-4 ${n.is_read ? "" : "ring-2 ring-black/20"}`}>
-                    <div className="text-sm">{n.message}</div>
-                    <div className="muted mt-2 text-xs">{n.is_read ? "Read" : "New"}</div>
+                    <div className="mt-4 flex flex-wrap justify-end gap-2">
+                      <button className="btn btn-ghost" type="button" onClick={() => printApplicationForm(app)}>
+                        Print Form PDF
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -716,8 +757,8 @@ export default function StudentDashboard() {
           )}
 
           {active === "Feedback" && (
-            <div className="mt-8">
-              <h2 className="text-xl font-semibold font-display">Feedback</h2>
+            <div className="mt-8 animate-slide-up">
+              <h2 className="text-xl font-bold font-display text-[color:var(--primary-deep)]">Feedback</h2>
               <p className="muted mt-2 text-sm">Share your experience so we can improve the claim workflow.</p>
               <div className="mt-4 panel p-4">
                 {feedbackList.length > 0 && (
@@ -798,8 +839,8 @@ export default function StudentDashboard() {
           )}
 
           {active === "Profile" && (
-            <div className="mt-8">
-              <h2 className="text-xl font-semibold font-display">Profile</h2>
+            <div className="mt-8 animate-slide-up">
+              <h2 className="text-xl font-bold font-display text-[color:var(--primary-deep)]">Profile</h2>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div className="panel p-4">
                   <div className="text-xs uppercase tracking-[0.2em] text-black/40">Name</div>
@@ -862,14 +903,14 @@ export default function StudentDashboard() {
           )}
 
           {active === "Delete Account" && (
-            <div className="mt-8">
-              <h2 className="text-xl font-semibold font-display text-rose-700">Delete Account</h2>
+            <div className="mt-8 animate-slide-up">
+              <h2 className="text-xl font-bold font-display text-rose-600">Delete Account</h2>
               <p className="mt-2 text-sm text-black/70">
                 This permanently deletes your account and related records. This action cannot be undone.
               </p>
-              <div className="mt-4 panel border-rose-300/70 bg-rose-50 p-4">
+              <div className="mt-4 section-card border-rose-200 bg-rose-50/50">
                 <button
-                  className="btn btn-primary bg-rose-600 hover:bg-rose-700 disabled:opacity-60"
+                  className="btn btn-danger disabled:opacity-60"
                   type="button"
                   onClick={deleteAccount}
                   disabled={deletingAccount}
@@ -893,12 +934,12 @@ export default function StudentDashboard() {
       </div>
 
       {sidebarOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
-          <div className="absolute left-4 right-4 top-6">
+        <div className="fixed inset-0 z-40 lg:hidden animate-fade">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
+          <div className="absolute left-4 right-4 top-6 animate-slide-up">
             <div className="card max-h-[80vh] overflow-y-auto p-4">
               <div className="flex items-center justify-between">
-                <div className="text-lg font-semibold font-display">Menu</div>
+                <div className="text-lg font-bold font-display text-[color:var(--primary-deep)]">Menu</div>
                 <button className="btn btn-ghost" onClick={() => setSidebarOpen(false)} aria-label="Close menu" type="button">
                   Close
                 </button>
@@ -921,7 +962,3 @@ export default function StudentDashboard() {
     </div>
   );
 }
-
-
-
-

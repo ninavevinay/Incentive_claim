@@ -74,6 +74,7 @@ export const api = {
   markRead: (id) => request(`/notifications/${id}/read`, { method: "POST" }),
   submitFeedback: (payload) => request("/feedback/", { method: "POST", body: JSON.stringify(payload) }),
   myFeedback: () => request("/feedback/mine"),
+  feedbackReport: () => request("/feedback/report?limit=2000"),
   publicNotices: () => request("/notices/public"),
   createNotice: (payload) => request("/notices/", { method: "POST", body: payload }),
   adminUsers: () => request("/admin/users"),
