@@ -4,7 +4,7 @@ import { api } from "../lib/api.js";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
 
-const HERO_TITLE = "Incentive Application Portal for SBJIT";
+const HERO_TITLE = "SBJIT NPTEL Reimburse";
 
 const HERO_DESCRIPTION =
   "Apply for NPTEL and academic incentives with a single digital workflow for students, faculty, and departments.";
@@ -290,7 +290,7 @@ export default function LandingPage() {
             </h2>
 
             <p>
-              The SBJIT Incentive Portal is a centralized digital platform designed to streamline academic incentive applications, verification, and approvals through a transparent multi-level workflow. It enables applicants, department coordinators, HODs, and institution authorities to manage the entire process efficiently from submission to final approval.
+              SBJIT NPTEL Reimburse is a centralized digital platform designed to streamline academic incentive applications, verification, and approvals through a transparent multi-level workflow. It enables applicants, department coordinators, HODs, and institution authorities to manage the entire process efficiently from submission to final approval.
             </p>
 
             <ul>
@@ -334,7 +334,7 @@ export default function LandingPage() {
         {/* NOTICE */}
         <section
           id="notice"
-          className="card p-[20px]"
+          className="card p-[20px] mb-8 md:mb-10"
         >
           <div className="flex flex-wrap items-center justify-between gap-3 tpl-notice-head">
             <div>

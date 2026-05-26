@@ -62,7 +62,7 @@ export default function AdminRegister() {
     <div className="auth-page">
       <div className="auth-shell">
         <section className="card p-6 md:p-10">
-          <div className="badge">Claim Portal</div>
+          <div className="badge">SBJIT NPTEL Reimburse</div>
           <h1 className="mt-6 text-3xl font-semibold font-display sm:text-4xl">Admin access registration</h1>
           <p className="muted mt-3 text-sm">
             Create the first admin account by setting a password and verifying an allowlisted college email with OTP.

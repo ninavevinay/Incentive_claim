@@ -16,60 +16,60 @@ import { AppHeader, AppFooter } from "./components/layout/index.js";
 function getSeoForPath(pathname) {
   if (pathname === "/") {
     return {
-      title: "Incentive Claim Portal | SBJIT",
+      title: "SBJIT NPTEL Reimburse",
       description: "Digital portal for incentive applications, review workflows, and approval tracking."
     };
   }
   if (pathname.startsWith("/login")) {
     return {
-      title: "Login | Incentive Claim Portal",
+      title: "Login | SBJIT NPTEL Reimburse",
       description: "Sign in to submit, review, and track incentive applications."
     };
   }
   if (pathname.startsWith("/forgot-password")) {
     return {
-      title: "Forgot Password | Incentive Claim Portal",
+      title: "Forgot Password | SBJIT NPTEL Reimburse",
       description: "Verify your email with OTP and reset your portal password securely."
     };
   }
   if (pathname.startsWith("/register-admin")) {
     return {
-      title: "Admin Registration | Incentive Claim Portal",
+      title: "Admin Registration | SBJIT NPTEL Reimburse",
       description: "Create an admin account for system-wide user and application management."
     };
   }
   if (pathname.startsWith("/register")) {
     return {
-      title: "Register | Incentive Claim Portal",
+      title: "Register | SBJIT NPTEL Reimburse",
       description: "Create a student or faculty account to apply for incentives."
     };
   }
   if (pathname.startsWith("/student")) {
     return {
-      title: "Student Portal | Incentive Claim Portal",
+      title: "Student Portal | SBJIT NPTEL Reimburse",
       description: "Student portal for application submission, tracking, and profile updates."
     };
   }
   if (pathname.startsWith("/faculty")) {
     return {
-      title: "Faculty Portal | Incentive Claim Portal",
+      title: "Faculty Portal | SBJIT NPTEL Reimburse",
       description: "Faculty portal for incentive application submission and status tracking."
     };
   }
   if (pathname.startsWith("/admin")) {
     return {
-      title: "Admin Portal | Incentive Claim Portal",
+      title: "Admin Portal | SBJIT NPTEL Reimburse",
       description: "Admin panel to manage users, applications, and authority registrations."
     };
   }
   if (pathname.startsWith("/authority")) {
     return {
-      title: "Authority Portal | Incentive Claim Portal",
+      title: "Authority Portal | SBJIT NPTEL Reimburse",
       description: "Authority portal for reviewing and processing incentive applications."
     };
   }
   return {
-    title: "Incentive Claim Portal",
+    title: "SBJIT NPTEL Reimburse",
     description: "Portal for submitting and managing institutional incentive applications."
   };
 }

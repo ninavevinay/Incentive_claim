@@ -39,7 +39,7 @@ export default function AppFooter({ useElearningFooter = false }) {
               />
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-wider text-[color:var(--primary)] sm:text-[11px]">
-                  Incentive Claim System
+                  SBJIT NPTEL Reimburse
                 </div>
                 <div className="text-[9px] text-black/35 sm:text-[10px]">
                   Version 1.0
@@ -80,8 +80,8 @@ export default function AppFooter({ useElearningFooter = false }) {
             <h4>Contact</h4>
             <div className="tpl-public-footer-copy">
               <p>SB Jain Institute of Technology Management &amp; Research, Nagpur</p>
-              <p>+91 00000 00000</p>
-              <p>incentive-portal@sbjit.edu.in</p>
+              <p>+91 7517635226</p>
+              <p>npteladmin@sbjit.edu.in</p>
             </div>
           </div>
 
@@ -112,7 +112,7 @@ export default function AppFooter({ useElearningFooter = false }) {
         </div>
         <div className="tpl-public-footer-bottom">
           <div>
-            &copy; {new Date().getFullYear()} SBJIT Incentive Portal. All Rights Reserved.
+            &copy; {new Date().getFullYear()} SBJIT NPTEL Reimburse. All Rights Reserved.
             <span className="ml-2">Developed by Vinay Ninave</span>
           </div>
           <div className="tpl-public-footer-menu">

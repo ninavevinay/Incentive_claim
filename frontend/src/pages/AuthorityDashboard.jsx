@@ -53,7 +53,8 @@ const REPORT_GRAPH_OPTIONS = [
   { value: "all_applications", label: "All Applications" },
   { value: "academic_year", label: "Academic Year + Type" },
   { value: "topper", label: "Topper" },
-  { value: "course_wise", label: "Course Wise" },
+  { value: "department_wise", label: "Department Wise" },
+  { value: "application_type", label: "Faculty / Student" },
   { value: "category_wise", label: "Category Wise" },
   { value: "feedback", label: "Feedback" },
   { value: "last_year", label: "Last Year" },
@@ -64,7 +65,8 @@ const REPORT_GRAPH_SEQUENCE = [
   "all_applications",
   "academic_year",
   "topper",
-  "course_wise",
+  "department_wise",
+  "application_type",
   "category_wise",
   "feedback",
   "last_year",
@@ -188,7 +190,7 @@ export default function AuthorityDashboard() {
   const [authorityUsers, setAuthorityUsers] = useState([]);
   const [authorityFilter, setAuthorityFilter] = useState("");
   const [authorityUsersMessage, setAuthorityUsersMessage] = useState({ type: "", text: "" });
-  const [deletingAuthorityUserId, setDeletingAuthorityUserId] = useState(null);
+  const [updatingAuthorityUserId, setUpdatingAuthorityUserId] = useState(null);
   const [authorityUsersPage, setAuthorityUsersPage] = useState(1);
   const [formWindowForm, setFormWindowForm] = useState({ start_date: "", end_date: "" });
   const [formWindowMessage, setFormWindowMessage] = useState("");
@@ -206,8 +208,10 @@ export default function AuthorityDashboard() {
   const [reportYearFilter, setReportYearFilter] = useState("all");
   const [reportApprovedYearFilter, setReportApprovedYearFilter] = useState("all");
   const [reportApprovedYearTypeFilter, setReportApprovedYearTypeFilter] = useState("all");
+  const [reportApprovedDepartmentFilter, setReportApprovedDepartmentFilter] = useState("all");
   const [reportStudentYearFilter, setReportStudentYearFilter] = useState("all");
   const [reportStudentCategoryFilter, setReportStudentCategoryFilter] = useState("all");
+  const [totalStatusFilter, setTotalStatusFilter] = useState("all");
   const [reportNotice, setReportNotice] = useState("");
   const [loading, setLoading] = useState(true);
   const [isTabRestored, setIsTabRestored] = useState(false);
@@ -241,6 +245,7 @@ export default function AuthorityDashboard() {
       return [];
     }
     const rows = await api.coordinatorAuthorityUsers({
+      include_inactive: true,
       limit: AUTHORITY_FETCH_LIMIT,
       q: search || undefined
     }).catch(() => []);
@@ -457,20 +462,31 @@ export default function AuthorityDashboard() {
   const approvedByMeYearTypeOptions = Array.from(
     new Set(approvedByMeApps.map((app) => toAcademicYearType(app?.data?.academic_year_type)))
   ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+  const approvedByMeDepartmentOptions = Array.from(
+    new Set(approvedByMeApps.map((app) => toReportLabel(app?.data?.department, "Not Provided")))
+  ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
   const filteredApprovedByMeApps = approvedByMeApps.filter((app) => {
     const appYear = toReportLabel(app?.data?.academic_year, "Not Provided");
     const appYearType = toAcademicYearType(app?.data?.academic_year_type);
+    const appDepartment = toReportLabel(app?.data?.department, "Not Provided");
     const yearPass = reportApprovedYearFilter === "all" || appYear === reportApprovedYearFilter;
     const yearTypePass = reportApprovedYearTypeFilter === "all" || appYearType === reportApprovedYearTypeFilter;
-    return yearPass && yearTypePass;
+    const departmentPass = reportApprovedDepartmentFilter === "all" || appDepartment === reportApprovedDepartmentFilter;
+    return yearPass && yearTypePass && departmentPass;
+  });
+  const filteredTotalApps = scopedAllApps.filter((app) => {
+    if (totalStatusFilter === "all") return true;
+    return String(app?.status || "").toLowerCase() === totalStatusFilter;
   });
   const filteredAuthorityUsers = authorityUsers.filter((u) => {
     const value = `${u.name} ${u.email} ${u.department} ${AUTHORITY_ROLE_LABELS[u.role] || u.role}`.toLowerCase();
     return value.includes(authorityFilter.trim().toLowerCase());
   });
+  const activeAuthorityUsersCount = authorityUsers.filter((u) => u?.is_active !== false).length;
+  const inactiveAuthorityUsersCount = authorityUsers.length - activeAuthorityUsersCount;
   const pendingPageData = paginateRows(apps, pendingPage);
   const approvedPageData = paginateRows(filteredApprovedByMeApps, approvedPage);
-  const totalPageData = paginateRows(scopedAllApps, totalPage);
+  const totalPageData = paginateRows(filteredTotalApps, totalPage);
   const authorityUsersPageData = paginateRows(filteredAuthorityUsers, authorityUsersPage);
 
   useEffect(() => {
@@ -480,8 +496,8 @@ export default function AuthorityDashboard() {
   }, [filteredApprovedByMeApps.length]);
 
   useEffect(() => {
-    setTotalPage((prev) => clampPage(prev, Math.ceil(Math.max(scopedAllApps.length, 1) / AUTHORITY_UI_PAGE_SIZE)));
-  }, [scopedAllApps.length]);
+    setTotalPage((prev) => clampPage(prev, Math.ceil(Math.max(filteredTotalApps.length, 1) / AUTHORITY_UI_PAGE_SIZE)));
+  }, [filteredTotalApps.length]);
 
   useEffect(() => {
     setAuthorityUsersPage((prev) =>
@@ -631,7 +647,8 @@ export default function AuthorityDashboard() {
     { key: "all_applications", title: "All Applications Status Graph" },
     { key: "academic_year", title: "Academic Year and Academic Year Type Wise Graph" },
     { key: "topper", title: "Topper Category Wise Graph" },
-    { key: "course_wise", title: "Course Wise Graph" },
+    { key: "department_wise", title: "Department Wise Applications Graph" },
+    { key: "application_type", title: "Faculty vs Student Applications Graph" },
     { key: "category_wise", title: "Category Wise Graph" },
     { key: "feedback", title: "Feedback Rating Graph" },
     { key: "last_year", title: `Last Year (${lastYear}) Graph` },
@@ -651,8 +668,21 @@ export default function AuthorityDashboard() {
       6
     )
   );
-  const courseWiseData = withChartColors(
-    groupReportData(scopedAllApps, (app) => app?.data?.course_title, "Not Provided", 6)
+  const departmentWiseData = withChartColors(
+    groupReportData(scopedAllApps, (app) => app?.data?.department, "Not Provided", 6)
+  );
+  const applicationTypeData = withChartColors(
+    groupReportData(
+      scopedAllApps,
+      (app) => {
+        const type = String(app?.application_type || "").trim().toLowerCase();
+        if (type === "student") return "Student";
+        if (type === "faculty") return "Faculty";
+        return "Other";
+      },
+      "Other",
+      6
+    )
   );
   const categoryWiseData = withChartColors(
     groupReportData(scopedAllApps, (app) => app?.data?.course_category, "Not Provided", 6)
@@ -679,14 +709,16 @@ export default function AuthorityDashboard() {
     count: reportLastYearApps.filter((app) => app.status === statusMeta.key).length
   }));
   const academicYearTotal = academicYearData.reduce((sum, item) => sum + item.count, 0);
-  const courseWiseTotal = courseWiseData.reduce((sum, item) => sum + item.count, 0);
+  const departmentWiseTotal = departmentWiseData.reduce((sum, item) => sum + item.count, 0);
+  const applicationTypeTotal = applicationTypeData.reduce((sum, item) => sum + item.count, 0);
   const categoryWiseTotal = categoryWiseData.reduce((sum, item) => sum + item.count, 0);
   const topperTotal = topperData.reduce((sum, item) => sum + item.count, 0);
   const feedbackTotal = feedbackData.reduce((sum, item) => sum + item.count, 0);
   const lastYearTotal = lastYearStatusData.reduce((sum, item) => sum + item.count, 0);
   const statusPieSegments = buildPieSegments(reportBreakdown, reportTotalCount);
   const academicYearSegments = buildPieSegments(academicYearData, academicYearTotal);
-  const courseWiseSegments = buildPieSegments(courseWiseData, courseWiseTotal);
+  const departmentWiseSegments = buildPieSegments(departmentWiseData, departmentWiseTotal);
+  const applicationTypeSegments = buildPieSegments(applicationTypeData, applicationTypeTotal);
   const categoryWiseSegments = buildPieSegments(categoryWiseData, categoryWiseTotal);
   const topperSegments = buildPieSegments(topperData, topperTotal);
   const feedbackSegments = buildPieSegments(feedbackData, feedbackTotal);
@@ -730,9 +762,11 @@ export default function AuthorityDashboard() {
         .filter((app) => {
           const appYear = toReportLabel(app?.data?.academic_year, "Not Provided");
           const appYearType = toAcademicYearType(app?.data?.academic_year_type);
+          const appDepartment = toReportLabel(app?.data?.department, "Not Provided");
           const yearPass = reportApprovedYearFilter === "all" || appYear === reportApprovedYearFilter;
           const yearTypePass = reportApprovedYearTypeFilter === "all" || appYearType === reportApprovedYearTypeFilter;
-          return yearPass && yearTypePass;
+          const departmentPass = reportApprovedDepartmentFilter === "all" || appDepartment === reportApprovedDepartmentFilter;
+          return yearPass && yearTypePass && departmentPass;
         })
         .filter((app) => app.status === "approved");
       const studentApproved = approvedRows.filter((app) => app.application_type === "student");
@@ -756,12 +790,17 @@ export default function AuthorityDashboard() {
       const headerImageDataUrl = await getPdfHeaderImageDataUrl().catch(() => null);
       const exportYearLabel = reportApprovedYearFilter === "all" ? "All Academic Years" : reportApprovedYearFilter;
       const exportYearTypeLabel = reportApprovedYearTypeFilter === "all" ? "All Types" : reportApprovedYearTypeFilter;
+      const exportDepartmentLabel = reportApprovedDepartmentFilter === "all" ? "All Departments" : reportApprovedDepartmentFilter;
       const drawReportHeader = ({ showMainTitle = false } = {}) => {
         const metaBottomY = drawPdfHeader(doc, {
           margin,
           title: "",
           subtitle: "",
-          metadataLines: [`Academic Year: ${exportYearLabel}`, `Academic Year Type: ${exportYearTypeLabel}`],
+          metadataLines: [
+            `Academic Year: ${exportYearLabel}`,
+            `Academic Year Type: ${exportYearTypeLabel}`,
+            `Department: ${exportDepartmentLabel}`
+          ],
           headerImageDataUrl
         });
         if (showMainTitle) {
@@ -973,6 +1012,59 @@ export default function AuthorityDashboard() {
       setReportNotice("Approved applications exported as A4 PDF with header.");
     } catch (err) {
       setReportNotice(err?.message || "Failed to export approved applications PDF.");
+    }
+  };
+
+  const exportApprovedApplicationsExcel = async () => {
+    try {
+      const liveApprovedByMe = await api
+        .myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT })
+        .catch(() => filteredApprovedByMeApps);
+      setMyApprovedApps(liveApprovedByMe);
+      const approvedRows = (Array.isArray(liveApprovedByMe) ? liveApprovedByMe : [])
+        .filter((app) => {
+          const appYear = toReportLabel(app?.data?.academic_year, "Not Provided");
+          const appYearType = toAcademicYearType(app?.data?.academic_year_type);
+          const appDepartment = toReportLabel(app?.data?.department, "Not Provided");
+          const yearPass = reportApprovedYearFilter === "all" || appYear === reportApprovedYearFilter;
+          const yearTypePass = reportApprovedYearTypeFilter === "all" || appYearType === reportApprovedYearTypeFilter;
+          const departmentPass = reportApprovedDepartmentFilter === "all" || appDepartment === reportApprovedDepartmentFilter;
+          return yearPass && yearTypePass && departmentPass;
+        })
+        .filter((app) => app.status === "approved");
+
+      const headers = [
+        "Application ID",
+        "Applicant",
+        "Type",
+        "Department",
+        "Academic Year",
+        "Academic Year Type",
+        "Submitted At",
+        "Approved Amount (Rs)"
+      ];
+      const escapeCsv = (value) => {
+        const safe = String(value ?? "").replace(/"/g, "\"\"");
+        return `"${safe}"`;
+      };
+      const csvRows = [
+        headers.map(escapeCsv).join(","),
+        ...approvedRows.map((app) => ([
+          app.id,
+          app?.data?.applicant_name || app?.data?.application_name || "-",
+          app?.application_type || "-",
+          app?.data?.department || "-",
+          toReportLabel(app?.data?.academic_year, "-"),
+          toAcademicYearType(app?.data?.academic_year_type),
+          app?.created_at ? new Date(app.created_at).toLocaleString() : "-",
+          Number(getInstitutionCoordinatorApprovedAmount(app) || 0).toFixed(2)
+        ]).map(escapeCsv).join(","))
+      ];
+      const csv = `\ufeff${csvRows.join("\r\n")}`;
+      downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), `approved-applications-${reportDateTag}.csv`);
+      setReportNotice("Approved applications exported as Excel.");
+    } catch (err) {
+      setReportNotice(err?.message || "Failed to export approved applications Excel.");
     }
   };
 
@@ -1527,8 +1619,23 @@ export default function AuthorityDashboard() {
     if (graphKey === "topper") {
       return renderGraphByType("Topper Category Wise Graph", topperData, topperSegments, topperTotal, "No topper category applications.");
     }
-    if (graphKey === "course_wise") {
-      return renderGraphByType("Course Wise Graph", courseWiseData, courseWiseSegments, courseWiseTotal);
+    if (graphKey === "department_wise") {
+      return renderGraphByType(
+        "Department Wise Applications Graph",
+        departmentWiseData,
+        departmentWiseSegments,
+        departmentWiseTotal,
+        "No department applications."
+      );
+    }
+    if (graphKey === "application_type") {
+      return renderGraphByType(
+        "Faculty vs Student Applications Graph",
+        applicationTypeData,
+        applicationTypeSegments,
+        applicationTypeTotal,
+        "No application type data."
+      );
     }
     if (graphKey === "category_wise") {
       return renderGraphByType("Category Wise Graph", categoryWiseData, categoryWiseSegments, categoryWiseTotal);
@@ -1584,28 +1691,29 @@ export default function AuthorityDashboard() {
     }
   };
 
-  const deactivateAuthorityUser = async (targetUser) => {
+  const setAuthorityUserStatus = async (targetUser, nextIsActive) => {
     const userId = Number(targetUser?.id);
     if (!Number.isFinite(userId)) return;
+    const actionLabel = nextIsActive ? "activate" : "deactivate";
     setAuthorityUsersMessage({ type: "", text: "" });
-    if (!window.confirm(`Deactivate authority user ${targetUser?.name || ""}? Record will be retained in database.`)) {
+    if (!window.confirm(`${actionLabel.charAt(0).toUpperCase() + actionLabel.slice(1)} authority user ${targetUser?.name || ""}? Record will be retained in database.`)) {
       return;
     }
-    setDeletingAuthorityUserId(userId);
+    setUpdatingAuthorityUserId(userId);
     try {
-      const result = await api.coordinatorDeleteAuthorityUser(userId);
+      const result = await api.coordinatorSetAuthorityUserStatus(userId, nextIsActive);
       await loadAuthorityUsers(authorityFilter.trim());
       setAuthorityUsersMessage({
         type: "success",
-        text: result?.message || "Authority user deactivated."
+        text: result?.message || `Authority user ${nextIsActive ? "activated" : "deactivated"}.`
       });
     } catch (err) {
       setAuthorityUsersMessage({
         type: "error",
-        text: err.message || "Failed to deactivate authority user."
+        text: err.message || `Failed to ${actionLabel} authority user.`
       });
     } finally {
-      setDeletingAuthorityUserId(null);
+      setUpdatingAuthorityUserId(null);
     }
   };
 
@@ -1861,13 +1969,18 @@ export default function AuthorityDashboard() {
                 <div className="flex flex-wrap items-center gap-2">
                   <button className="btn btn-ghost" type="button" onClick={refreshApprovedOnly}>Refresh</button>
                   {user?.role === "institution_coordinator" && (
-                    <button className="btn btn-ghost" type="button" onClick={exportApprovedApplicationsPdf}>
-                      Export PDF
-                    </button>
+                    <>
+                      <button className="btn btn-ghost" type="button" onClick={exportApprovedApplicationsExcel}>
+                        Export Excel
+                      </button>
+                      <button className="btn btn-ghost" type="button" onClick={exportApprovedApplicationsPdf}>
+                        Export PDF
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:max-w-3xl">
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:max-w-5xl lg:grid-cols-3">
                 <div>
                   <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year</label>
                   <select
@@ -1900,6 +2013,22 @@ export default function AuthorityDashboard() {
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">Department</label>
+                  <select
+                    className="input mt-2"
+                    value={reportApprovedDepartmentFilter}
+                    onChange={(e) => {
+                      setReportApprovedDepartmentFilter(e.target.value);
+                      setApprovedPage(1);
+                    }}
+                  >
+                    <option value="all">All Departments</option>
+                    {approvedByMeDepartmentOptions.map((department) => (
+                      <option key={department} value={department}>{department}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="mt-4 grid gap-4">
                 {approvedPageData.rows.map((app) => (
@@ -1917,6 +2046,9 @@ export default function AuthorityDashboard() {
                     </div>
                     <div className="mt-2 text-sm text-black/70">
                       <span className="text-black/50">Academic Year Type:</span> {toAcademicYearType(app.data?.academic_year_type)}
+                    </div>
+                    <div className="mt-2 text-sm text-black/70">
+                      <span className="text-black/50">Submitted At:</span> {app.created_at ? new Date(app.created_at).toLocaleString() : "-"}
                     </div>
                     {user?.role === "institution_coordinator" && (
                       <div className="mt-2 text-sm text-black/70">
@@ -1959,7 +2091,24 @@ export default function AuthorityDashboard() {
 
           {active === "Total Applications" && (
             <div className="mt-8">
-              <h2 className="text-xl font-semibold font-display">Total Applications</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold font-display">Total Applications</h2>
+                <div className="w-full sm:w-72">
+                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">Status Filter</label>
+                  <select
+                    className="input mt-2"
+                    value={totalStatusFilter}
+                    onChange={(e) => {
+                      setTotalStatusFilter(e.target.value);
+                      setTotalPage(1);
+                    }}
+                  >
+                    <option value="all">All Applications</option>
+                    <option value="approved">Approved Applications</option>
+                    <option value="rejected">Rejected Applications</option>
+                  </select>
+                </div>
+              </div>
               <div className="mt-4 grid gap-4">
                 {totalPageData.rows.map((app) => (
                   <div key={app.id} className="panel p-4">
@@ -1971,13 +2120,16 @@ export default function AuthorityDashboard() {
                     <div className="mt-3 text-sm text-black/70">
                       <span className="text-black/50">Department:</span> {app.data.department || "-"}
                     </div>
+                    <div className="mt-2 text-sm text-black/70">
+                      <span className="text-black/50">Submitted At:</span> {app.created_at ? new Date(app.created_at).toLocaleString() : "-"}
+                    </div>
                   </div>
                 ))}
-                {scopedAllApps.length === 0 && (
+                {filteredTotalApps.length === 0 && (
                   <div className="muted text-sm">No applications.</div>
                 )}
               </div>
-              {scopedAllApps.length > 0 && (
+              {filteredTotalApps.length > 0 && (
                 <div className="mt-4 flex items-center justify-between gap-2">
                   <div className="muted text-sm">
                     Page {totalPageData.currentPage} of {totalPageData.totalPages}
@@ -2011,9 +2163,7 @@ export default function AuthorityDashboard() {
                 <h2 className="text-xl font-semibold font-display">Real-Time Reports Dashboard</h2>
                 <div className="flex flex-wrap items-center gap-2">
                   <button className="btn btn-ghost" type="button" onClick={refresh}>Refresh</button>
-                  <button className="btn btn-ghost" type="button" onClick={exportReportExcel}>Export Excel</button>
                   <button className="btn btn-ghost" type="button" onClick={exportReportPdf}>Export PDF</button>
-                  <button className="btn btn-ghost" type="button" onClick={exportReportWord}>Export Word</button>
                 </div>
               </div>
 
@@ -2075,7 +2225,20 @@ export default function AuthorityDashboard() {
                         academicYearSegments,
                         academicYearTotal
                       )}
-                      {renderPieCard("Course Wise Pie Graph", courseWiseData, courseWiseSegments, courseWiseTotal)}
+                      {renderPieCard(
+                        "Department Wise Applications Pie Graph",
+                        departmentWiseData,
+                        departmentWiseSegments,
+                        departmentWiseTotal,
+                        "No department applications."
+                      )}
+                      {renderPieCard(
+                        "Faculty vs Student Applications Pie Graph",
+                        applicationTypeData,
+                        applicationTypeSegments,
+                        applicationTypeTotal,
+                        "No application type data."
+                      )}
                       {renderPieCard("Category Wise Pie Graph", categoryWiseData, categoryWiseSegments, categoryWiseTotal)}
                       {renderPieCard("Feedback Rating Pie Graph", feedbackData, feedbackSegments, feedbackTotal, "No feedback submissions yet.")}
                       {renderPieCard(`Last Year (${lastYear}) Pie Graph`, lastYearStatusData, lastYearSegments, lastYearTotal, `No applications in ${lastYear}`)}
@@ -2313,7 +2476,9 @@ export default function AuthorityDashboard() {
             <div className="mt-8">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-semibold font-display">Authority Users</h2>
-                <div className="muted text-sm">{authorityUsers.length} active</div>
+                <div className="muted text-sm">
+                  {activeAuthorityUsersCount} active, {inactiveAuthorityUsersCount} inactive
+                </div>
               </div>
               <div className="mt-3">
                 <input
@@ -2330,57 +2495,87 @@ export default function AuthorityDashboard() {
                 <div className="grid gap-3 sm:hidden">
                   {authorityUsersPageData.rows.map((u) => (
                     <div key={u.id} className="panel p-3">
-                      <div className="font-semibold">{u.name}</div>
-                      <div className="mt-1 text-xs text-black/60">{u.email}</div>
-                      <div className="mt-2 text-sm text-black/70">Department: {u.department}</div>
-                      <div className="text-sm text-black/70">Role: {AUTHORITY_ROLE_LABELS[u.role] || u.role}</div>
-                      <div className="mt-3">
-                        <button
-                          className="btn btn-ghost text-rose-600 w-full"
-                          type="button"
-                          disabled={deletingAuthorityUserId === u.id}
-                          onClick={() => deactivateAuthorityUser(u)}
-                        >
-                          {deletingAuthorityUserId === u.id ? "Deactivating..." : "Deactivate"}
-                        </button>
-                      </div>
+                      {(() => {
+                        const isActive = u?.is_active !== false;
+                        return (
+                          <>
+                            <div className="font-semibold">{u.name}</div>
+                            <div className="mt-1 text-xs text-black/60">{u.email}</div>
+                            <div className="mt-2 text-sm text-black/70">Department: {u.department}</div>
+                            <div className="text-sm text-black/70">Role: {AUTHORITY_ROLE_LABELS[u.role] || u.role}</div>
+                            <div className="text-sm text-black/70">
+                              Status:{" "}
+                              <span className={isActive ? "text-emerald-700 font-medium" : "text-rose-700 font-medium"}>
+                                {isActive ? "Active" : "Inactive"}
+                              </span>
+                            </div>
+                            <div className="mt-3">
+                              <button
+                                className={`btn btn-ghost w-full ${isActive ? "text-rose-600" : "text-emerald-700"}`}
+                                type="button"
+                                disabled={updatingAuthorityUserId === u.id}
+                                onClick={() => setAuthorityUserStatus(u, !isActive)}
+                              >
+                                {updatingAuthorityUserId === u.id
+                                  ? "Updating..."
+                                  : (isActive ? "Deactivate" : "Activate")}
+                              </button>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>
                 <div className="hidden overflow-x-auto sm:block">
-                  <table className="w-full min-w-[820px] text-left text-sm">
+                  <table className="w-full min-w-[920px] text-left text-sm">
                     <thead>
                       <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
                         <th className="py-2 pr-4">Full Name</th>
                         <th className="py-2 pr-4">Email</th>
                         <th className="py-2 pr-4">Department</th>
                         <th className="py-2 pr-4">Role</th>
+                        <th className="py-2 pr-4">Status</th>
                         <th className="py-2 pr-4">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-black/10">
                       {authorityUsersPageData.rows.map((u) => (
                         <tr key={u.id}>
-                          <td className="py-3 pr-4 font-medium">{u.name}</td>
-                          <td className="py-3 pr-4">{u.email}</td>
-                          <td className="py-3 pr-4">{u.department}</td>
-                          <td className="py-3 pr-4">{AUTHORITY_ROLE_LABELS[u.role] || u.role}</td>
-                          <td className="py-3 pr-4">
-                            <button
-                              className="btn btn-ghost text-rose-600"
-                              type="button"
-                              disabled={deletingAuthorityUserId === u.id}
-                              onClick={() => deactivateAuthorityUser(u)}
-                            >
-                              {deletingAuthorityUserId === u.id ? "Deactivating..." : "Deactivate"}
-                            </button>
-                          </td>
+                          {(() => {
+                            const isActive = u?.is_active !== false;
+                            return (
+                              <>
+                                <td className="py-3 pr-4 font-medium">{u.name}</td>
+                                <td className="py-3 pr-4">{u.email}</td>
+                                <td className="py-3 pr-4">{u.department}</td>
+                                <td className="py-3 pr-4">{AUTHORITY_ROLE_LABELS[u.role] || u.role}</td>
+                                <td className="py-3 pr-4">
+                                  <span className={isActive ? "text-emerald-700 font-medium" : "text-rose-700 font-medium"}>
+                                    {isActive ? "Active" : "Inactive"}
+                                  </span>
+                                </td>
+                                <td className="py-3 pr-4">
+                                  <button
+                                    className={`btn btn-ghost ${isActive ? "text-rose-600" : "text-emerald-700"}`}
+                                    type="button"
+                                    disabled={updatingAuthorityUserId === u.id}
+                                    onClick={() => setAuthorityUserStatus(u, !isActive)}
+                                  >
+                                    {updatingAuthorityUserId === u.id
+                                      ? "Updating..."
+                                      : (isActive ? "Deactivate" : "Activate")}
+                                  </button>
+                                </td>
+                              </>
+                            );
+                          })()}
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                {filteredAuthorityUsers.length === 0 && <div className="muted mt-3 text-sm">No active authority users found.</div>}
+                {filteredAuthorityUsers.length === 0 && <div className="muted mt-3 text-sm">No authority users found.</div>}
                 {filteredAuthorityUsers.length > 0 && (
                   <div className="mt-3 flex items-center justify-between gap-2">
                     <div className="muted text-sm">Page {authorityUsersPageData.currentPage} of {authorityUsersPageData.totalPages}</div>

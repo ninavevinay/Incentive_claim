@@ -347,6 +347,7 @@ def admin_create_authority_user(
 @router.get("/coordinator/authority-users", response_model=list[AdminUserOut])
 def list_authority_users_for_institution_coordinator(
     q: str | None = Query(default=None),
+    include_inactive: bool = Query(default=True),
     limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -356,8 +357,9 @@ def list_authority_users_for_institution_coordinator(
     query = (
         db.query(User)
         .filter(User.role.in_(AUTHORITY_ROLES))
-        .filter(User.is_active.is_(True))
     )
+    if not include_inactive:
+        query = query.filter(User.is_active.is_(True))
     if user.role == "institution_coordinator":
         query = query.filter(User.role.in_(["department_coordinator", "department_hod"]))
     if q and q.strip():
@@ -398,6 +400,35 @@ def deactivate_authority_user_for_institution_coordinator(
     db.add(target)
     db.commit()
     return {"message": "Authority user deactivated. Record retained in database."}
+
+
+@router.put("/coordinator/authority-users/{user_id}/status")
+def set_authority_user_status_for_institution_coordinator(
+    user_id: int,
+    is_active: bool = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_admin_or_institution_coordinator(user)
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.role not in AUTHORITY_ROLES:
+        raise HTTPException(status_code=400, detail="Selected user is not an authority user")
+    if user.role == "institution_coordinator" and target.role == "institution_coordinator":
+        raise HTTPException(status_code=403, detail="Institution coordinator cannot manage another institution coordinator")
+    if target.id == user.id and not is_active:
+        raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
+    if target.is_active == is_active:
+        state = "active" if is_active else "deactivated"
+        return {"message": f"Authority user already {state}", "is_active": target.is_active}
+
+    target.is_active = is_active
+    target.deleted_at = None if is_active else datetime.utcnow()
+    db.add(target)
+    db.commit()
+    action = "activated" if is_active else "deactivated"
+    return {"message": f"Authority user {action}.", "is_active": target.is_active}
 
 
 @router.delete("/users/non-admin")

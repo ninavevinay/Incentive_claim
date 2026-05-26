@@ -54,27 +54,27 @@ def _issue_token_for_user(db: Session, user: User, request: Request) -> TokenRes
 
 
 def _build_registration_otp_email(email: str, otp: str) -> tuple[str, str]:
-    subject = "SBJIT Incentive Portal registration OTP"
+    subject = "SBJIT NPTEL Reimburse registration OTP"
     text_body = (
         f"Hello,\n\n"
-        f"Your OTP for SBJIT Incentive Portal registration is: {otp}\n\n"
+        f"Your OTP for SBJIT NPTEL Reimburse registration is: {otp}\n\n"
         f"This OTP will expire in {settings.otp_expire_minutes} minutes.\n"
         f"If you did not request this OTP, you can ignore this email.\n\n"
         f"Email: {email}\n"
-        f"Portal Team"
+        f"SBJIT NPTEL Reimburse Team"
     )
     return subject, text_body
 
 
 def _build_password_reset_otp_email(email: str, otp: str) -> tuple[str, str]:
-    subject = "SBJIT Incentive Portal password reset OTP"
+    subject = "SBJIT NPTEL Reimburse password reset OTP"
     text_body = (
         f"Hello,\n\n"
-        f"Your OTP to reset your SBJIT Incentive Portal password is: {otp}\n\n"
+        f"Your OTP to reset your SBJIT NPTEL Reimburse password is: {otp}\n\n"
         f"This OTP will expire in {settings.otp_expire_minutes} minutes.\n"
         f"If you did not request password reset, you can ignore this email.\n\n"
         f"Email: {email}\n"
-        f"Portal Team"
+        f"SBJIT NPTEL Reimburse Team"
     )
     return subject, text_body
 

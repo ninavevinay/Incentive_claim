@@ -83,6 +83,7 @@ export default function AdminDashboard() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [feedbackExporting, setFeedbackExporting] = useState(false);
   const [feedbackExportMessage, setFeedbackExportMessage] = useState("");
+  const [updatingAuthorityUserId, setUpdatingAuthorityUserId] = useState(null);
   const [authorityForm, setAuthorityForm] = useState({
     name: "",
     email: "",
@@ -268,6 +269,8 @@ export default function AdminDashboard() {
     const value = `${u.name} ${u.email} ${u.department} ${AUTHORITY_ROLE_LABELS[u.role] || u.role}`.toLowerCase();
     return value.includes(authorityFilter.trim().toLowerCase());
   });
+  const activeAuthorityUsersCount = authorityUsers.filter((u) => u?.is_active !== false).length;
+  const inactiveAuthorityUsersCount = authorityUsers.length - activeAuthorityUsersCount;
 
   const filteredApplications = applications.filter((app) => {
     const value = [
@@ -444,6 +447,32 @@ export default function AdminDashboard() {
       setApplicationsMessage({ type: "error", text: err.message || "Failed to delete applications" });
     } finally {
       setBulkDeleting(false);
+    }
+  };
+
+  const setAuthorityUserStatus = async (targetUser, nextIsActive) => {
+    const userId = Number(targetUser?.id);
+    if (!Number.isFinite(userId)) return;
+    const actionLabel = nextIsActive ? "activate" : "deactivate";
+    setUsersMessage({ type: "", text: "" });
+    if (!window.confirm(`${actionLabel.charAt(0).toUpperCase() + actionLabel.slice(1)} authority user ${targetUser?.name || ""}?`)) {
+      return;
+    }
+    setUpdatingAuthorityUserId(userId);
+    try {
+      const result = await api.coordinatorSetAuthorityUserStatus(userId, nextIsActive);
+      await loadUsersData({ search: authorityFilter.trim(), authorityOnly: true });
+      setUsersMessage({
+        type: "success",
+        text: result?.message || `Authority user ${nextIsActive ? "activated" : "deactivated"}.`
+      });
+      setError("");
+    } catch (err) {
+      const message = err.message || `Failed to ${actionLabel} authority user`;
+      setUsersMessage({ type: "error", text: message });
+      setError(message);
+    } finally {
+      setUpdatingAuthorityUserId(null);
     }
   };
 
@@ -782,7 +811,7 @@ export default function AdminDashboard() {
           <div className="mt-6 panel p-4">
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-xl font-semibold font-display">Authority Users</h2>
-              <div className="muted text-sm">{authorityUsers.length} total</div>
+              <div className="muted text-sm">{activeAuthorityUsersCount} active, {inactiveAuthorityUsersCount} inactive</div>
             </div>
             <div className="mt-3">
               <input
@@ -799,30 +828,77 @@ export default function AdminDashboard() {
               <div className="grid gap-3 sm:hidden">
                 {authorityPageData.rows.map((u) => (
                   <div key={u.id} className="panel p-3">
-                    <div className="font-semibold">{u.name}</div>
-                    <div className="mt-1 text-xs text-black/60">{u.email}</div>
-                    <div className="mt-2 text-sm text-black/70">Department: {u.department}</div>
-                    <div className="text-sm text-black/70">Role: {AUTHORITY_ROLE_LABELS[u.role] || u.role}</div>
+                    {(() => {
+                      const isActive = u?.is_active !== false;
+                      return (
+                        <>
+                          <div className="font-semibold">{u.name}</div>
+                          <div className="mt-1 text-xs text-black/60">{u.email}</div>
+                          <div className="mt-2 text-sm text-black/70">Department: {u.department}</div>
+                          <div className="text-sm text-black/70">Role: {AUTHORITY_ROLE_LABELS[u.role] || u.role}</div>
+                          <div className="text-sm text-black/70">
+                            Status:{" "}
+                            <span className={isActive ? "text-emerald-700 font-medium" : "text-rose-700 font-medium"}>
+                              {isActive ? "Active" : "Inactive"}
+                            </span>
+                          </div>
+                          <div className="mt-3">
+                            <button
+                              className={`btn btn-ghost w-full ${isActive ? "text-rose-600" : "text-emerald-700"}`}
+                              type="button"
+                              disabled={updatingAuthorityUserId === u.id}
+                              onClick={() => setAuthorityUserStatus(u, !isActive)}
+                            >
+                              {updatingAuthorityUserId === u.id ? "Updating..." : (isActive ? "Deactivate" : "Activate")}
+                            </button>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>
               <div className="hidden overflow-x-auto sm:block">
-                <table className="w-full min-w-[760px] text-left text-sm">
+                <table className="w-full min-w-[920px] text-left text-sm">
                   <thead>
                     <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
                       <th className="py-2 pr-4">Full Name</th>
                       <th className="py-2 pr-4">Email</th>
                       <th className="py-2 pr-4">Department</th>
                       <th className="py-2 pr-4">Role</th>
+                      <th className="py-2 pr-4">Status</th>
+                      <th className="py-2 pr-4">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-black/10">
                     {authorityPageData.rows.map((u) => (
                       <tr key={u.id}>
-                        <td className="py-3 pr-4 font-medium">{u.name}</td>
-                        <td className="py-3 pr-4">{u.email}</td>
-                        <td className="py-3 pr-4">{u.department}</td>
-                        <td className="py-3 pr-4">{AUTHORITY_ROLE_LABELS[u.role] || u.role}</td>
+                        {(() => {
+                          const isActive = u?.is_active !== false;
+                          return (
+                            <>
+                              <td className="py-3 pr-4 font-medium">{u.name}</td>
+                              <td className="py-3 pr-4">{u.email}</td>
+                              <td className="py-3 pr-4">{u.department}</td>
+                              <td className="py-3 pr-4">{AUTHORITY_ROLE_LABELS[u.role] || u.role}</td>
+                              <td className="py-3 pr-4">
+                                <span className={isActive ? "text-emerald-700 font-medium" : "text-rose-700 font-medium"}>
+                                  {isActive ? "Active" : "Inactive"}
+                                </span>
+                              </td>
+                              <td className="py-3 pr-4">
+                                <button
+                                  className={`btn btn-ghost ${isActive ? "text-rose-600" : "text-emerald-700"}`}
+                                  type="button"
+                                  disabled={updatingAuthorityUserId === u.id}
+                                  onClick={() => setAuthorityUserStatus(u, !isActive)}
+                                >
+                                  {updatingAuthorityUserId === u.id ? "Updating..." : (isActive ? "Deactivate" : "Activate")}
+                                </button>
+                              </td>
+                            </>
+                          );
+                        })()}
                       </tr>
                     ))}
                   </tbody>
@@ -850,6 +926,11 @@ export default function AdminDashboard() {
                       Next
                     </button>
                   </div>
+                </div>
+              )}
+              {usersMessage.text && (
+                <div className={`mt-3 text-sm ${usersMessage.type === "error" ? "text-rose-600" : "text-emerald-600"}`}>
+                  {usersMessage.text}
                 </div>
               )}
             </div>

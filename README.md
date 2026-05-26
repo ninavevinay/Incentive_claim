@@ -1,6 +1,6 @@
-﻿# Incentive Claim Portal
+# SBJIT NPTEL Reimburse
 
-Private internal portal for students, faculty, authorities, and admins to submit, review, and manage incentive applications.
+Private internal platform for students, faculty, authorities, and admins to submit, review, and manage NPTEL reimbursement applications.
 
 ## Stack
 - Frontend: React + Vite + Tailwind CSS
@@ -45,7 +45,7 @@ SMTP_PORT=587
 SMTP_USERNAME=your-sender@gmail.com
 SMTP_PASSWORD=your-gmail-app-password
 SMTP_FROM_EMAIL=your-sender@gmail.com
-SMTP_FROM_NAME=SBJIT Incentive Portal
+SMTP_FROM_NAME=SBJIT NPTEL Reimburse
 SMTP_USE_TLS=true
 SMTP_USE_SSL=false
 OTP_EXPIRE_MINUTES=10
@@ -111,3 +111,4 @@ For Gmail, `SMTP_PASSWORD` must be a Google App Password, not your regular Gmail
 ## Load Testing
 - k6 script: `backend/loadtest/k6-portal.js`
 - Guide: `backend/loadtest/README.md`
+

@@ -85,7 +85,7 @@ export default function AppHeader({
               </span>
 
               <span className="tpl-public-brand-main">
-                Incentive Portal
+                SBJIT NPTEL Reimburse
               </span>
             </span>
           </Link>

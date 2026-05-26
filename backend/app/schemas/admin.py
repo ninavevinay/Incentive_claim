@@ -8,6 +8,7 @@ class AdminUserOut(BaseModel):
     email: EmailStr
     role: str
     department: str
+    is_active: bool
 
     class Config:
         from_attributes = True

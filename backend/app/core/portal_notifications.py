@@ -21,9 +21,9 @@ def _build_email_body(recipient_name: str, headline: str, details: Sequence[str]
             lines.extend(f"- {detail}" for detail in visible_details)
     lines.extend([
         "",
-        "This is an automated notification from the SBJIT Incentive Portal. Please do not reply to this email.",
-        "For support, contact incentiveinfo@sbjit.edu.in.",
-        "SBJIT Incentive Portal Team",
+        "This is an automated notification from SBJIT NPTEL Reimburse. Please do not reply to this email.",
+        "For support, contact npteladmin.sbjit.edu.in.",
+        "SBJIT NPTEL Reimburse Team",
     ])
     return "\n".join(lines)
 

@@ -101,6 +101,8 @@ export const api = {
   myFeedback: (params = {}) => request(`/feedback/mine${toQueryString(params)}`),
   feedbackReport: (params = {}) => request(`/feedback/report${toQueryString(params)}`),
   publicNotices: () => request("/notices/public"),
+  publicApprovedHighlights: (params = {}) =>
+    request(`/applications/public-approved-highlights${toQueryString(params)}`),
   createNotice: (payload) => request("/notices/", { method: "POST", body: payload }),
   adminUsers: (params = {}) => request(`/admin/users${toQueryString(params)}`),
   adminApplications: (params = {}) => request(`/admin/applications${toQueryString(params)}`),
@@ -116,6 +118,8 @@ export const api = {
     request("/admin/users/authority", { method: "POST", body: JSON.stringify(payload) }),
   coordinatorAuthorityUsers: (params = {}) =>
     request(`/admin/coordinator/authority-users${toQueryString(params)}`),
+  coordinatorSetAuthorityUserStatus: (id, is_active) =>
+    request(`/admin/coordinator/authority-users/${id}/status${toQueryString({ is_active })}`, { method: "PUT" }),
   coordinatorDeleteAuthorityUser: (id) =>
     request(`/admin/coordinator/authority-users/${id}`, { method: "DELETE" }),
   adminDeleteAllNonAdminUsers: () => request("/admin/users/non-admin", { method: "DELETE" }),

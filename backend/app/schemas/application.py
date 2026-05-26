@@ -72,3 +72,13 @@ class ApplicationReview(BaseModel):
     action: str
     remark: str | None = None
     approved_amount: float | None = None
+
+
+class PublicApprovedHighlightOut(BaseModel):
+    id: int
+    application_type: str
+    applicant_name: str
+    course_category: str
+    percentage: str
+    photograph_file: str
+    created_at: datetime

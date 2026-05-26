@@ -353,7 +353,7 @@ export default function FacultyDashboard() {
       <div className="page-container">
         <div className="mb-4 lg:hidden">
           <div>
-            <div className="text-lg font-bold font-display text-[color:var(--primary-deep)]">Incentive Portal</div>
+            <div className="text-lg font-bold font-display text-[color:var(--primary-deep)]">SBJIT NPTEL Reimburse</div>
           </div>
         </div>
 

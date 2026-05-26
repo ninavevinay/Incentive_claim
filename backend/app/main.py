@@ -59,7 +59,7 @@ def _repair_legacy_application_reviews() -> None:
 if settings.run_startup_legacy_repair:
     _repair_legacy_application_reviews()
 
-app = FastAPI(title="Incentive Claim API")
+app = FastAPI(title="SBJIT NPTEL Reimburse API")
 if settings.rate_limit_enabled:
     app.add_middleware(
         RateLimitMiddleware,

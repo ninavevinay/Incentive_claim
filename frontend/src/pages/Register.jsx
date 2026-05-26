@@ -80,36 +80,7 @@ export default function Register() {
 
   return (
     <div className="auth-page">
-      <div className="auth-shell">
-        <section className="card p-6 md:p-10">
-          <div className="badge">Claim Portal</div>
-          <h1 className="mt-6 text-3xl font-semibold font-display sm:text-4xl">Create your incentive account</h1>
-          <p className="muted mt-3 text-sm">
-            Register with your college email, set a password, and verify ownership with a one-time password.
-          </p>
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 md:grid-cols-3">
-            <div className="kpi">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Step 1</div>
-              <div className="kpi-value">Profile</div>
-              <p className="mt-1 text-xs text-black/60">Enter your name, role, and department</p>
-            </div>
-            <div className="kpi">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Step 2</div>
-              <div className="kpi-value">Password</div>
-              <p className="mt-1 text-xs text-black/60">Choose the password you will use for future login</p>
-            </div>
-            <div className="kpi">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Step 3</div>
-              <div className="kpi-value">OTP</div>
-              <p className="mt-1 text-xs text-black/60">Verify the code sent to your college email</p>
-            </div>
-          </div>
-          <div className="mt-6 panel p-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-black/40">Registration Rule</div>
-            <p className="mt-2 text-sm">Only <span className="font-semibold">@sbjit.edu.in</span> email addresses can create portal access.</p>
-          </div>
-        </section>
-
+      <div className="mx-auto w-full max-w-xl">
         <section className="card p-6 md:p-10">
           <div className="section-eyebrow">Claim Registration</div>
           <h2 className="section-head">Register with Password and OTP</h2>

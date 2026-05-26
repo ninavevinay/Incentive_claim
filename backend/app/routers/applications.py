@@ -10,11 +10,18 @@ from app.core.portal_notifications import queue_portal_notification
 from app.models.application import Application
 from app.models.form_window import FormWindow
 from app.models.notification import Notification
-from app.schemas.application import StudentApplicationCreate, FacultyApplicationCreate, ApplicationOut, ApplicationReview
+from app.schemas.application import (
+    StudentApplicationCreate,
+    FacultyApplicationCreate,
+    ApplicationOut,
+    ApplicationReview,
+    PublicApprovedHighlightOut,
+)
 from app.routers.profile import get_current_user
 from app.models.user import User
 import os
 import uuid
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 DEFAULT_QUERY_LIMIT = settings.app_query_default_limit
@@ -140,6 +147,9 @@ SIGNATURE_UPLOAD_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 SIGNATURE_UPLOAD_CONTENT_TYPES = {"image/jpeg", "image/png"}
 PHOTO_UPLOAD_EXTENSIONS = {".jpg", ".jpeg"}
 PHOTO_UPLOAD_CONTENT_TYPES = {"image/jpeg"}
+PHOTO_TARGET_SIZE_PX = (600, 600)
+PHOTO_TARGET_DPI = (300, 300)
+PHOTO_JPEG_QUALITY = 82
 ROLE_LABELS = {
     "department_coordinator": "Department Coordinator",
     "department_hod": "Department HOD",
@@ -209,6 +219,15 @@ def _required_academic_year_type(value: str | None) -> str:
     if academic_year_type not in ALLOWED_ACADEMIC_YEAR_TYPES:
         raise HTTPException(status_code=400, detail="Academic year type must be ODD or EVEN")
     return academic_year_type
+
+
+def _normalize_percentage(value: str | None) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "-"
+    if text.endswith("%"):
+        return text
+    return f"{text}%"
 
 
 
@@ -302,6 +321,66 @@ def _save_upload(
                 raise HTTPException(status_code=413, detail="File too large. Max 150KB.")
             out.write(chunk)
     return f"/uploads/{name}"
+
+
+def _upload_url_to_disk_path(upload_url: str) -> str:
+    relative_path = str(upload_url or "").strip().lstrip("/")
+    return os.path.normpath(relative_path)
+
+
+def _lanczos_filter():
+    try:
+        return Image.Resampling.LANCZOS
+    except AttributeError:
+        return Image.LANCZOS
+
+
+def _standardize_photograph(upload_url: str) -> None:
+    disk_path = _upload_url_to_disk_path(upload_url)
+
+    if not os.path.isfile(disk_path):
+        raise HTTPException(status_code=400, detail="Photograph upload failed")
+
+    try:
+        with Image.open(disk_path) as image:
+            standardized = ImageOps.fit(
+                image.convert("RGB"),
+                PHOTO_TARGET_SIZE_PX,
+                method=_lanczos_filter(),
+                centering=(0.5, 0.5),
+            )
+            standardized.save(
+                disk_path,
+                format="JPEG",
+                quality=PHOTO_JPEG_QUALITY,
+                optimize=True,
+                dpi=PHOTO_TARGET_DPI,
+            )
+    except (UnidentifiedImageError, OSError, ValueError):
+        if os.path.exists(disk_path):
+            os.remove(disk_path)
+        raise HTTPException(status_code=400, detail="Invalid photograph file")
+
+    if os.path.getsize(disk_path) > MAX_UPLOAD_BYTES:
+        os.remove(disk_path)
+        raise HTTPException(
+            status_code=413,
+            detail="Photograph too large after resizing. Max 150KB.",
+        )
+
+
+def _save_photograph_upload(file: UploadFile | None, applicant_name: str) -> str | None:
+    upload_url = _save_upload(
+        file,
+        applicant_name,
+        "photograph",
+        allowed_extensions=PHOTO_UPLOAD_EXTENSIONS,
+        allowed_content_types=PHOTO_UPLOAD_CONTENT_TYPES,
+        invalid_type_detail="Only JPG files are allowed for photograph upload",
+    )
+    if upload_url:
+        _standardize_photograph(upload_url)
+    return upload_url
 
 
 def _enforce_form_window_open(db: Session) -> None:
@@ -631,13 +710,9 @@ def create_student_application(
         "fee_receipt_file": _save_upload(fee_receipt_file, applicant_name, "fee_receipt"),
         "certificate_file": _save_upload(certificate_file, applicant_name, "certificate"),
         "bank_passbook_file": _save_upload(bank_passbook_file, applicant_name, "bank_passbook"),
-        "photograph_file": _save_upload(
+        "photograph_file": _save_photograph_upload(
             photograph_file,
             applicant_name,
-            "photograph",
-            allowed_extensions=PHOTO_UPLOAD_EXTENSIONS,
-            allowed_content_types=PHOTO_UPLOAD_CONTENT_TYPES,
-            invalid_type_detail="Only JPG files are allowed for photograph upload",
         ),
         "signature_file": _save_upload(
             signature_file,
@@ -658,7 +733,7 @@ def create_student_application(
         user,
         message=f"{_application_reference(app)} received and sent for review.",
         background_tasks=background_tasks,
-        email_subject="Application Received - SBJIT Incentive Portal",
+        email_subject="Application Received - SBJIT NPTEL Reimburse",
         email_headline="Your student application was submitted successfully and is now under review.",
         email_details=[
             f"Application ID: {app.id}",
@@ -759,13 +834,9 @@ def create_faculty_application(
         "permissible_claim": permissible_claim,
         "fee_receipt_file": _save_upload(fee_receipt_file, applicant_name, "fee_receipt"),
         "certificate_file": _save_upload(certificate_file, applicant_name, "certificate"),
-        "photograph_file": _save_upload(
+        "photograph_file": _save_photograph_upload(
             photograph_file,
             applicant_name,
-            "photograph",
-            allowed_extensions=PHOTO_UPLOAD_EXTENSIONS,
-            allowed_content_types=PHOTO_UPLOAD_CONTENT_TYPES,
-            invalid_type_detail="Only JPG files are allowed for photograph upload",
         ),
         "signature_file": _save_upload(
             signature_file,
@@ -786,7 +857,7 @@ def create_faculty_application(
         user,
         message=f"{_application_reference(app)} received and sent for review.",
         background_tasks=background_tasks,
-        email_subject="Application Received - SBJIT Incentive Portal",
+        email_subject="Application Received - SBJIT NPTEL Reimburse",
         email_headline="Your faculty application was submitted successfully and is now under review.",
         email_details=[
             f"Application ID: {app.id}",
@@ -808,6 +879,46 @@ def create_faculty_application(
     db.commit()
     db.refresh(app)
     return app
+
+
+@router.get("/public-approved-highlights", response_model=list[PublicApprovedHighlightOut])
+def public_approved_highlights(
+    limit: int = Query(default=8, ge=1, le=30),
+    db: Session = Depends(get_db),
+):
+    apps = (
+        db.query(Application)
+        .filter(Application.status == "approved")
+        .filter(Application.application_type.in_(["student", "faculty"]))
+        .order_by(Application.created_at.desc())
+        .limit(_safe_limit(limit * 5))
+        .all()
+    )
+
+    highlights: list[PublicApprovedHighlightOut] = []
+    for app in apps:
+        data = app.data or {}
+        photo = str(data.get("photograph_file") or "").strip()
+        if not photo:
+            continue
+
+        highlights.append(
+            PublicApprovedHighlightOut(
+                id=app.id,
+                application_type=str(app.application_type or "").strip().lower(),
+                applicant_name=str(data.get("applicant_name") or data.get("application_name") or "Applicant").strip(),
+                course_category=str(data.get("course_category") or "Not Provided").strip(),
+                percentage=_normalize_percentage(data.get("course_score")),
+                photograph_file=photo,
+                created_at=app.created_at,
+            )
+        )
+        if len(highlights) >= limit:
+            break
+
+    return highlights
+
+
 @router.get("/mine", response_model=list[ApplicationOut])
 def my_applications(
     status: str | None = Query(default=None),
@@ -1106,7 +1217,7 @@ def review_application(application_id: int, payload: ApplicationReview, backgrou
                 applicant,
                 message=f"{application_ref} approved. Amount: Rs. {payload.approved_amount:.2f}",
                 background_tasks=background_tasks,
-                email_subject="Application Approved - SBJIT Incentive Portal",
+                email_subject="Application Approved - SBJIT NPTEL Reimburse",
                 email_headline=f"Good news. {application_ref} has been approved.",
                 email_details=[
                     f"Application type: {app.application_type.title()}",
