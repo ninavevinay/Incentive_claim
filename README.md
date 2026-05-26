@@ -51,11 +51,24 @@ SMTP_USE_SSL=false
 OTP_EXPIRE_MINUTES=10
 OTP_RESEND_SECONDS=60
 OTP_LENGTH=6
+DB_POOL_SIZE=20
+DB_MAX_OVERFLOW=40
+DB_POOL_TIMEOUT_SECONDS=30
+DB_POOL_RECYCLE_SECONDS=1800
+DB_POOL_USE_LIFO=true
+DB_STATEMENT_TIMEOUT_MS=30000
+APP_QUERY_DEFAULT_LIMIT=100
+APP_QUERY_MAX_LIMIT=500
+RUN_STARTUP_LEGACY_REPAIR=true
 ```
 
 Run backend:
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+Production run example (Linux):
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
 ### 3) Frontend
@@ -88,3 +101,13 @@ For Gmail, `SMTP_PASSWORD` must be a Google App Password, not your regular Gmail
 - OTP email not sent: fill `SMTP_USERNAME`, `SMTP_PASSWORD`, and `SMTP_FROM_EMAIL` in `backend/.env`.
 - Admin registration blocked: update `ADMIN_EMAIL_ALLOWLIST` in `backend/.env`.
 - Invalid domain: use an `@sbjit.edu.in` address only.
+
+## Scalability Notes (100k Registered Users)
+- Authority and admin listing endpoints now support pagination and server-side search filters (`limit`, `offset`, `q`, role filters where applicable).
+- Default dashboard polling has been reduced and tied to active/visible tabs to cut unnecessary load.
+- Core DB indexes are applied in `backend/schema.sql` and startup schema updates.
+- For high traffic, tune DB pool and worker counts using the new `.env` settings above.
+
+## Load Testing
+- k6 script: `backend/loadtest/k6-portal.js`
+- Guide: `backend/loadtest/README.md`

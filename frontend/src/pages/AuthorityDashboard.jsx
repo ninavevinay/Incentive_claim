@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../lib/api.js";
@@ -19,7 +19,10 @@ const baseMenu = [
   "Delete Account",
   "Logout"
 ];
-const AUTO_REFRESH_MS = 5000;
+const AUTO_REFRESH_MS = 30000;
+const AUTHORITY_FETCH_LIMIT = 250;
+const FEEDBACK_FETCH_LIMIT = 200;
+const REPORT_FEEDBACK_FETCH_LIMIT = 500;
 const getAuthorityTabStorageKey = (role) => `incentive:authority:${role || "unknown"}:active-tab`;
 
 const ROLE_LABELS = {
@@ -27,6 +30,14 @@ const ROLE_LABELS = {
   department_hod: "Department HOD",
   institution_coordinator: "Institution Coordinator"
 };
+const AUTHORITY_ROLES = [
+  { value: "department_coordinator", label: "Department Coordinator" },
+  { value: "department_hod", label: "Department HOD" },
+  { value: "institution_coordinator", label: "Institution Coordinator" }
+];
+const AUTHORITY_ROLE_LABELS = Object.fromEntries(
+  AUTHORITY_ROLES.map((item) => [item.value, item.label])
+);
 const REPORT_STATUS_META = [
   { key: "pending_department_coordinator", label: "Pending Dept Coordinator", color: "#0ea5e9" },
   { key: "pending_department_hod", label: "Pending Dept HOD", color: "#6366f1" },
@@ -72,6 +83,7 @@ const REPORT_EXTRA_COLORS = [
   "#3b82f6"
 ];
 const REPORT_YEAR_WISE_START = 2024;
+const AUTHORITY_UI_PAGE_SIZE = 8;
 
 const toReportLabel = (value, fallback = "Not Provided") => {
   const text = String(value ?? "").trim();
@@ -140,6 +152,23 @@ const buildPieSegments = (items, total, radius = 72) => {
     });
 };
 
+const clampPage = (page, totalPages) => {
+  const safeTotal = Math.max(1, totalPages || 1);
+  return Math.min(Math.max(1, page), safeTotal);
+};
+
+const paginateRows = (rows, page, pageSize = AUTHORITY_UI_PAGE_SIZE) => {
+  const list = Array.isArray(rows) ? rows : [];
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  const currentPage = clampPage(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  return {
+    rows: list.slice(start, start + pageSize),
+    currentPage,
+    totalPages,
+  };
+};
+
 export default function AuthorityDashboard() {
   const { user, setUser } = useAuth();
   const [active, setActive] = useState("Overview");
@@ -156,6 +185,13 @@ export default function AuthorityDashboard() {
   const [noticeTitle, setNoticeTitle] = useState("");
   const [noticeFile, setNoticeFile] = useState(null);
   const [noticeMessage, setNoticeMessage] = useState("");
+  const [authorityUsers, setAuthorityUsers] = useState([]);
+  const [authorityFilter, setAuthorityFilter] = useState("");
+  const [authorityUsersMessage, setAuthorityUsersMessage] = useState({ type: "", text: "" });
+  const [deletingAuthorityUserId, setDeletingAuthorityUserId] = useState(null);
+  const [authorityUsersPage, setAuthorityUsersPage] = useState(1);
+  const [formWindowForm, setFormWindowForm] = useState({ start_date: "", end_date: "" });
+  const [formWindowMessage, setFormWindowMessage] = useState("");
   const [message, setMessage] = useState("");
   const [editingDepartment, setEditingDepartment] = useState(false);
   const [departmentDraft, setDepartmentDraft] = useState("");
@@ -175,10 +211,13 @@ export default function AuthorityDashboard() {
   const [reportNotice, setReportNotice] = useState("");
   const [loading, setLoading] = useState(true);
   const [isTabRestored, setIsTabRestored] = useState(false);
+  const [pendingPage, setPendingPage] = useState(1);
+  const [approvedPage, setApprovedPage] = useState(1);
+  const [totalPage, setTotalPage] = useState(1);
   const graphContainerRef = useRef(null);
   const allGraphsPdfRef = useRef(null);
   const menu = user?.role === "institution_coordinator"
-    ? [...baseMenu.slice(0, 4), "Reports", "Notice", ...baseMenu.slice(4)]
+    ? [...baseMenu.slice(0, 4), "Reports", "Notice", "Authority Users", "Form Filling Window", ...baseMenu.slice(4)]
     : baseMenu;
 
   useEffect(() => {
@@ -192,14 +231,41 @@ export default function AuthorityDashboard() {
   }, [user?.role]);
 
   const scopedDepartment = user?.role === "institution_coordinator" ? "" : (user?.department || "");
-  const fetchPending = async () => api.pendingApplications(scopedDepartment);
-  const fetchAll = async () => api.allApplications(scopedDepartment);
+  const fetchPending = async () =>
+    api.pendingApplications({ department: scopedDepartment, limit: AUTHORITY_FETCH_LIMIT });
+  const fetchAll = async () =>
+    api.allApplications({ department: scopedDepartment, limit: AUTHORITY_FETCH_LIMIT });
+  const loadAuthorityUsers = async (search = "") => {
+    if (user?.role !== "institution_coordinator") {
+      setAuthorityUsers([]);
+      return [];
+    }
+    const rows = await api.coordinatorAuthorityUsers({
+      limit: AUTHORITY_FETCH_LIMIT,
+      q: search || undefined
+    }).catch(() => []);
+    const normalizedRows = Array.isArray(rows) ? rows : [];
+    setAuthorityUsers(normalizedRows);
+    return normalizedRows;
+  };
+  const loadFormWindowData = async () => {
+    if (user?.role !== "institution_coordinator") {
+      setFormWindowForm({ start_date: "", end_date: "" });
+      return { start_date: null, end_date: null };
+    }
+    const formWindowData = await api.adminFormWindow().catch(() => ({ start_date: null, end_date: null }));
+    setFormWindowForm({
+      start_date: formWindowData?.start_date || "",
+      end_date: formWindowData?.end_date || ""
+    });
+    return formWindowData;
+  };
   const loadReportFeedback = async () => {
     if (user?.role !== "institution_coordinator") {
       setReportFeedbackList([]);
       return [];
     }
-    const reportRows = await api.feedbackReport().catch(() => []);
+    const reportRows = await api.feedbackReport({ limit: REPORT_FEEDBACK_FETCH_LIMIT }).catch(() => []);
     setReportFeedbackList(Array.isArray(reportRows) ? reportRows : []);
     return reportRows;
   };
@@ -210,31 +276,63 @@ export default function AuthorityDashboard() {
     Promise.all([
       fetchPending().then(setApps).catch(() => setApps([])),
       fetchAll().then(setAllApps).catch(() => setAllApps([])),
-      api.myReviewedApplications("approve").then(setMyApprovedApps).catch(() => setMyApprovedApps([])),
-      api.myFeedback().then(setFeedbackList).catch(() => setFeedbackList([])),
+      api.myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT })
+        .then(setMyApprovedApps)
+        .catch(() => setMyApprovedApps([])),
+      api.myFeedback({ limit: FEEDBACK_FETCH_LIMIT }).then(setFeedbackList).catch(() => setFeedbackList([])),
       loadReportFeedback(),
-      api.publicNotices().then(setNotices).catch(() => setNotices([]))
+      api.publicNotices().then(setNotices).catch(() => setNotices([])),
+      user?.role === "institution_coordinator" ? loadAuthorityUsers() : Promise.resolve([]),
+      user?.role === "institution_coordinator" ? loadFormWindowData() : Promise.resolve({ start_date: null, end_date: null })
     ]).finally(() => setLoading(false));
     const interval = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       fetchPending().then(setApps).catch(() => setApps([]));
       fetchAll().then(setAllApps).catch(() => setAllApps([]));
-      api.myReviewedApplications("approve").then(setMyApprovedApps).catch(() => setMyApprovedApps([]));
-      loadReportFeedback();
       api.publicNotices().then(setNotices).catch(() => setNotices([]));
+      if (active === "My Approved Applications") {
+        api.myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT })
+          .then(setMyApprovedApps)
+          .catch(() => setMyApprovedApps([]));
+      }
+      if (active === "Feedback") {
+        api.myFeedback({ limit: FEEDBACK_FETCH_LIMIT }).then(setFeedbackList).catch(() => setFeedbackList([]));
+      }
+      if (active === "Overview" || active === "Reports") {
+        loadReportFeedback();
+      }
+      if (active === "Authority Users" && user?.role === "institution_coordinator") {
+        loadAuthorityUsers(authorityFilter.trim());
+      }
+      if (active === "Form Filling Window" && user?.role === "institution_coordinator") {
+        loadFormWindowData();
+      }
     }, AUTO_REFRESH_MS);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, active]);
 
   useEffect(() => {
     if (!user) return;
     const refreshOnFocus = () => {
       fetchPending().then(setApps).catch(() => setApps([]));
       fetchAll().then(setAllApps).catch(() => setAllApps([]));
-      api.myReviewedApplications("approve").then(setMyApprovedApps).catch(() => setMyApprovedApps([]));
-      loadReportFeedback();
       api.publicNotices().then(setNotices).catch(() => setNotices([]));
+      if (active === "My Approved Applications") {
+        api.myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT })
+          .then(setMyApprovedApps)
+          .catch(() => setMyApprovedApps([]));
+      }
+      if (active === "Overview" || active === "Reports") {
+        loadReportFeedback();
+      }
+      if (active === "Authority Users" && user?.role === "institution_coordinator") {
+        loadAuthorityUsers(authorityFilter.trim());
+      }
+      if (active === "Form Filling Window" && user?.role === "institution_coordinator") {
+        loadFormWindowData();
+      }
       if (active === "Feedback") {
-        api.myFeedback().then(setFeedbackList).catch(() => setFeedbackList([]));
+        api.myFeedback({ limit: FEEDBACK_FETCH_LIMIT }).then(setFeedbackList).catch(() => setFeedbackList([]));
       }
     };
     const handleVisibilityChange = () => {
@@ -258,19 +356,27 @@ export default function AuthorityDashboard() {
     setLoading(true);
     setApps(await fetchPending().catch(() => []));
     setAllApps(await fetchAll().catch(() => []));
-    setMyApprovedApps(await api.myReviewedApplications("approve").catch(() => []));
+    setMyApprovedApps(
+      await api.myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT }).catch(() => [])
+    );
     await loadReportFeedback();
+    if (user?.role === "institution_coordinator") {
+      await loadAuthorityUsers(authorityFilter.trim());
+      await loadFormWindowData();
+    }
     setNotices(await api.publicNotices().catch(() => []));
     setLoading(false);
   };
 
   const loadFeedback = async () => {
-    const mine = await api.myFeedback().catch(() => []);
+    const mine = await api.myFeedback({ limit: FEEDBACK_FETCH_LIMIT }).catch(() => []);
     setFeedbackList(mine);
   };
 
   const refreshApprovedOnly = async () => {
-    setMyApprovedApps(await api.myReviewedApplications("approve").catch(() => []));
+    setMyApprovedApps(
+      await api.myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT }).catch(() => [])
+    );
   };
 
   useEffect(() => {
@@ -292,7 +398,17 @@ export default function AuthorityDashboard() {
     if (active === "Feedback") {
       loadFeedback();
     }
-  }, [active]);
+    if (active === "Authority Users" && user?.role === "institution_coordinator") {
+      loadAuthorityUsers(authorityFilter.trim());
+    }
+    if (active === "Form Filling Window" && user?.role === "institution_coordinator") {
+      loadFormWindowData();
+    }
+  }, [active, user?.role, authorityFilter]);
+
+  useEffect(() => {
+    setPendingPage((prev) => clampPage(prev, Math.ceil(Math.max(apps.length, 1) / AUTHORITY_UI_PAGE_SIZE)));
+  }, [apps.length]);
 
   useEffect(() => {
     const handleToggle = () => setSidebarOpen((prev) => !prev);
@@ -348,6 +464,31 @@ export default function AuthorityDashboard() {
     const yearTypePass = reportApprovedYearTypeFilter === "all" || appYearType === reportApprovedYearTypeFilter;
     return yearPass && yearTypePass;
   });
+  const filteredAuthorityUsers = authorityUsers.filter((u) => {
+    const value = `${u.name} ${u.email} ${u.department} ${AUTHORITY_ROLE_LABELS[u.role] || u.role}`.toLowerCase();
+    return value.includes(authorityFilter.trim().toLowerCase());
+  });
+  const pendingPageData = paginateRows(apps, pendingPage);
+  const approvedPageData = paginateRows(filteredApprovedByMeApps, approvedPage);
+  const totalPageData = paginateRows(scopedAllApps, totalPage);
+  const authorityUsersPageData = paginateRows(filteredAuthorityUsers, authorityUsersPage);
+
+  useEffect(() => {
+    setApprovedPage((prev) =>
+      clampPage(prev, Math.ceil(Math.max(filteredApprovedByMeApps.length, 1) / AUTHORITY_UI_PAGE_SIZE))
+    );
+  }, [filteredApprovedByMeApps.length]);
+
+  useEffect(() => {
+    setTotalPage((prev) => clampPage(prev, Math.ceil(Math.max(scopedAllApps.length, 1) / AUTHORITY_UI_PAGE_SIZE)));
+  }, [scopedAllApps.length]);
+
+  useEffect(() => {
+    setAuthorityUsersPage((prev) =>
+      clampPage(prev, Math.ceil(Math.max(filteredAuthorityUsers.length, 1) / AUTHORITY_UI_PAGE_SIZE))
+    );
+  }, [filteredAuthorityUsers.length]);
+
   const rejectedAppsCount = scopedAllApps.filter((app) => app.status === "rejected").length;
   const reportBreakdown = REPORT_STATUS_META.map((statusMeta) => ({
     ...statusMeta,
@@ -581,7 +722,9 @@ export default function AuthorityDashboard() {
 
   const exportApprovedApplicationsPdf = async () => {
     try {
-      const liveApprovedByMe = await api.myReviewedApplications("approve").catch(() => filteredApprovedByMeApps);
+      const liveApprovedByMe = await api
+        .myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT })
+        .catch(() => filteredApprovedByMeApps);
       setMyApprovedApps(liveApprovedByMe);
       const approvedRows = (Array.isArray(liveApprovedByMe) ? liveApprovedByMe : [])
         .filter((app) => {
@@ -1409,7 +1552,7 @@ export default function AuthorityDashboard() {
   };
 
   const deleteAccount = async () => {
-    if (!window.confirm("Delete your account permanently? This cannot be undone.")) return;
+    if (!window.confirm("Deactivate your account? You can contact admin to reactivate later.")) return;
     setDeleteMessage("");
     setDeletingAccount(true);
     try {
@@ -1419,6 +1562,50 @@ export default function AuthorityDashboard() {
       setDeleteMessage(err.message || "Unable to delete account right now.");
     } finally {
       setDeletingAccount(false);
+    }
+  };
+
+  const submitFormWindow = async (e) => {
+    e.preventDefault();
+    setFormWindowMessage("");
+    try {
+      if (!formWindowForm.start_date || !formWindowForm.end_date) {
+        setFormWindowMessage("Select both start date and end date.");
+        return;
+      }
+      const updated = await api.adminSetFormWindow(formWindowForm);
+      setFormWindowForm({
+        start_date: updated?.start_date || "",
+        end_date: updated?.end_date || ""
+      });
+      setFormWindowMessage("Form filling window updated.");
+    } catch (err) {
+      setFormWindowMessage(err.message || "Failed to update form window.");
+    }
+  };
+
+  const deactivateAuthorityUser = async (targetUser) => {
+    const userId = Number(targetUser?.id);
+    if (!Number.isFinite(userId)) return;
+    setAuthorityUsersMessage({ type: "", text: "" });
+    if (!window.confirm(`Deactivate authority user ${targetUser?.name || ""}? Record will be retained in database.`)) {
+      return;
+    }
+    setDeletingAuthorityUserId(userId);
+    try {
+      const result = await api.coordinatorDeleteAuthorityUser(userId);
+      await loadAuthorityUsers(authorityFilter.trim());
+      setAuthorityUsersMessage({
+        type: "success",
+        text: result?.message || "Authority user deactivated."
+      });
+    } catch (err) {
+      setAuthorityUsersMessage({
+        type: "error",
+        text: err.message || "Failed to deactivate authority user."
+      });
+    } finally {
+      setDeletingAuthorityUserId(null);
     }
   };
 
@@ -1574,7 +1761,7 @@ export default function AuthorityDashboard() {
               </div>
               {message && <div className="mt-3 rounded-xl px-4 py-2 text-sm font-medium" style={{background:"rgba(16,185,129,0.1)",color:"#10b981",border:"1px solid rgba(16,185,129,0.2)"}}>{message}</div>}
               <div className="mt-4 grid gap-5">
-                {apps.map((app) => (
+                {pendingPageData.rows.map((app) => (
                   <div key={app.id} className="form-section animate-slide-up">
                     <div className="flex items-center justify-between">
                       <div className="font-bold text-base" style={{color:"var(--text-primary)"}}>{app.data.applicant_name || app.data.application_name || "-"}</div>
@@ -1614,6 +1801,7 @@ export default function AuthorityDashboard() {
                       <div><span style={{color:"var(--text-muted)"}}>Fee Receipt:</span> {docLink(app.data.fee_receipt_file)}</div>
                       <div><span style={{color:"var(--text-muted)"}}>Certificate:</span> {docLink(app.data.certificate_file)}</div>
                       <div><span style={{color:"var(--text-muted)"}}>Bank Passbook:</span> {docLink(app.data.bank_passbook_file)}</div>
+                      <div><span style={{color:"var(--text-muted)"}}>Photograph:</span> {docLink(app.data.photograph_file)}</div>
                       <div><span style={{color:"var(--text-muted)"}}>Signature:</span> {docLink(app.data.signature_file)}</div>
                     </div>
                     <div className="mt-5 pt-4" style={{borderTop:"1px solid var(--border-subtle)"}}>
@@ -1638,6 +1826,31 @@ export default function AuthorityDashboard() {
                   </div>
                 )}
               </div>
+              {apps.length > 0 && (
+                <div className="mt-4 flex items-center justify-between gap-2">
+                  <div className="muted text-sm">
+                    Page {pendingPageData.currentPage} of {pendingPageData.totalPages}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      disabled={pendingPageData.currentPage <= 1}
+                      onClick={() => setPendingPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      Prev
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      disabled={pendingPageData.currentPage >= pendingPageData.totalPages}
+                      onClick={() => setPendingPage((prev) => Math.min(pendingPageData.totalPages, prev + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1660,7 +1873,10 @@ export default function AuthorityDashboard() {
                   <select
                     className="input mt-2"
                     value={reportApprovedYearFilter}
-                    onChange={(e) => setReportApprovedYearFilter(e.target.value)}
+                    onChange={(e) => {
+                      setReportApprovedYearFilter(e.target.value);
+                      setApprovedPage(1);
+                    }}
                   >
                     <option value="all">All Academic Years</option>
                     {approvedByMeYearOptions.map((year) => (
@@ -1673,7 +1889,10 @@ export default function AuthorityDashboard() {
                   <select
                     className="input mt-2"
                     value={reportApprovedYearTypeFilter}
-                    onChange={(e) => setReportApprovedYearTypeFilter(e.target.value)}
+                    onChange={(e) => {
+                      setReportApprovedYearTypeFilter(e.target.value);
+                      setApprovedPage(1);
+                    }}
                   >
                     <option value="all">All Types</option>
                     {approvedByMeYearTypeOptions.map((type) => (
@@ -1683,7 +1902,7 @@ export default function AuthorityDashboard() {
                 </div>
               </div>
               <div className="mt-4 grid gap-4">
-                {filteredApprovedByMeApps.map((app) => (
+                {approvedPageData.rows.map((app) => (
                   <div key={app.id} className="panel p-4">
                     <div className="flex items-center justify-between">
                       <div className="font-semibold">{app.data.applicant_name || app.data.application_name || "-"}</div>
@@ -1710,6 +1929,31 @@ export default function AuthorityDashboard() {
                   <div className="muted text-sm">No applications found for the selected filters.</div>
                 )}
               </div>
+              {filteredApprovedByMeApps.length > 0 && (
+                <div className="mt-4 flex items-center justify-between gap-2">
+                  <div className="muted text-sm">
+                    Page {approvedPageData.currentPage} of {approvedPageData.totalPages}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      disabled={approvedPageData.currentPage <= 1}
+                      onClick={() => setApprovedPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      Prev
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      disabled={approvedPageData.currentPage >= approvedPageData.totalPages}
+                      onClick={() => setApprovedPage((prev) => Math.min(approvedPageData.totalPages, prev + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1717,7 +1961,7 @@ export default function AuthorityDashboard() {
             <div className="mt-8">
               <h2 className="text-xl font-semibold font-display">Total Applications</h2>
               <div className="mt-4 grid gap-4">
-                {scopedAllApps.map((app) => (
+                {totalPageData.rows.map((app) => (
                   <div key={app.id} className="panel p-4">
                     <div className="flex items-center justify-between">
                       <div className="font-semibold">{app.data.applicant_name || app.data.application_name || "-"}</div>
@@ -1733,6 +1977,31 @@ export default function AuthorityDashboard() {
                   <div className="muted text-sm">No applications.</div>
                 )}
               </div>
+              {scopedAllApps.length > 0 && (
+                <div className="mt-4 flex items-center justify-between gap-2">
+                  <div className="muted text-sm">
+                    Page {totalPageData.currentPage} of {totalPageData.totalPages}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      disabled={totalPageData.currentPage <= 1}
+                      onClick={() => setTotalPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      Prev
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      disabled={totalPageData.currentPage >= totalPageData.totalPages}
+                      onClick={() => setTotalPage((prev) => Math.min(totalPageData.totalPages, prev + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -2040,6 +2309,142 @@ export default function AuthorityDashboard() {
             </div>
           )}
 
+          {active === "Authority Users" && user?.role === "institution_coordinator" && (
+            <div className="mt-8">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-xl font-semibold font-display">Authority Users</h2>
+                <div className="muted text-sm">{authorityUsers.length} active</div>
+              </div>
+              <div className="mt-3">
+                <input
+                  className="input"
+                  placeholder="Search authority users by name, email, department, or role"
+                  value={authorityFilter}
+                  onChange={(e) => {
+                    setAuthorityFilter(e.target.value);
+                    setAuthorityUsersPage(1);
+                  }}
+                />
+              </div>
+              <div className="mt-4">
+                <div className="grid gap-3 sm:hidden">
+                  {authorityUsersPageData.rows.map((u) => (
+                    <div key={u.id} className="panel p-3">
+                      <div className="font-semibold">{u.name}</div>
+                      <div className="mt-1 text-xs text-black/60">{u.email}</div>
+                      <div className="mt-2 text-sm text-black/70">Department: {u.department}</div>
+                      <div className="text-sm text-black/70">Role: {AUTHORITY_ROLE_LABELS[u.role] || u.role}</div>
+                      <div className="mt-3">
+                        <button
+                          className="btn btn-ghost text-rose-600 w-full"
+                          type="button"
+                          disabled={deletingAuthorityUserId === u.id}
+                          onClick={() => deactivateAuthorityUser(u)}
+                        >
+                          {deletingAuthorityUserId === u.id ? "Deactivating..." : "Deactivate"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden overflow-x-auto sm:block">
+                  <table className="w-full min-w-[820px] text-left text-sm">
+                    <thead>
+                      <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
+                        <th className="py-2 pr-4">Full Name</th>
+                        <th className="py-2 pr-4">Email</th>
+                        <th className="py-2 pr-4">Department</th>
+                        <th className="py-2 pr-4">Role</th>
+                        <th className="py-2 pr-4">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-black/10">
+                      {authorityUsersPageData.rows.map((u) => (
+                        <tr key={u.id}>
+                          <td className="py-3 pr-4 font-medium">{u.name}</td>
+                          <td className="py-3 pr-4">{u.email}</td>
+                          <td className="py-3 pr-4">{u.department}</td>
+                          <td className="py-3 pr-4">{AUTHORITY_ROLE_LABELS[u.role] || u.role}</td>
+                          <td className="py-3 pr-4">
+                            <button
+                              className="btn btn-ghost text-rose-600"
+                              type="button"
+                              disabled={deletingAuthorityUserId === u.id}
+                              onClick={() => deactivateAuthorityUser(u)}
+                            >
+                              {deletingAuthorityUserId === u.id ? "Deactivating..." : "Deactivate"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {filteredAuthorityUsers.length === 0 && <div className="muted mt-3 text-sm">No active authority users found.</div>}
+                {filteredAuthorityUsers.length > 0 && (
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <div className="muted text-sm">Page {authorityUsersPageData.currentPage} of {authorityUsersPageData.totalPages}</div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="btn btn-ghost"
+                        type="button"
+                        disabled={authorityUsersPageData.currentPage <= 1}
+                        onClick={() => setAuthorityUsersPage((prev) => Math.max(1, prev - 1))}
+                      >
+                        Prev
+                      </button>
+                      <button
+                        className="btn btn-ghost"
+                        type="button"
+                        disabled={authorityUsersPageData.currentPage >= authorityUsersPageData.totalPages}
+                        onClick={() => setAuthorityUsersPage((prev) => Math.min(authorityUsersPageData.totalPages, prev + 1))}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {authorityUsersMessage.text && (
+                  <div className={`mt-3 text-sm ${authorityUsersMessage.type === "error" ? "text-rose-600" : "text-emerald-600"}`}>
+                    {authorityUsersMessage.text}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {active === "Form Filling Window" && user?.role === "institution_coordinator" && (
+            <div className="mt-8">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold font-display">Form Filling Window</h2>
+                <div className="muted text-sm">Institution Coordinator Control</div>
+              </div>
+              <form onSubmit={submitFormWindow} className="mt-4 grid gap-3 md:grid-cols-3">
+                <input
+                  className="input"
+                  type="date"
+                  value={formWindowForm.start_date}
+                  onChange={(e) => setFormWindowForm((prev) => ({ ...prev, start_date: e.target.value }))}
+                  required
+                />
+                <input
+                  className="input"
+                  type="date"
+                  value={formWindowForm.end_date}
+                  onChange={(e) => setFormWindowForm((prev) => ({ ...prev, end_date: e.target.value }))}
+                  required
+                />
+                <div className="md:col-span-3 flex justify-end">
+                  <button className="btn btn-primary w-full md:w-auto" type="submit">Save Window</button>
+                </div>
+              </form>
+              <div className="muted mt-3 text-sm">
+                Applications can be submitted only between selected start and end dates.
+              </div>
+              {formWindowMessage && <div className="mt-2 text-sm text-black/70">{formWindowMessage}</div>}
+            </div>
+          )}
+
           {active === "Feedback" && (
             <div className="mt-8">
               <h2 className="text-xl font-semibold font-display">Feedback</h2>
@@ -2190,7 +2595,7 @@ export default function AuthorityDashboard() {
             <div className="mt-8">
               <h2 className="text-xl font-semibold font-display text-rose-700">Delete Account</h2>
               <p className="mt-2 text-sm text-black/70">
-                This permanently deletes your account and related records. This action cannot be undone.
+                This deactivates your account access. Your records are retained in the database.
               </p>
               <div className="mt-4 panel border-rose-300/70 bg-rose-50 p-4">
                 <button

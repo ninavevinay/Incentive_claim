@@ -1,7 +1,9 @@
 from datetime import datetime
 from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.portal_notifications import queue_portal_notification
 from app.core.security import hash_password, is_allowed_email, normalize_email
@@ -27,10 +29,18 @@ from app.schemas.admin import (
 from app.schemas.application import ApplicationOut
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+DEFAULT_LIMIT = min(200, settings.app_query_default_limit)
+MAX_LIMIT = max(200, settings.app_query_max_limit)
+AUTHORITY_ROLES = {
+    "department_coordinator",
+    "department_hod",
+    "institution_coordinator",
+}
 APPLICATION_UPLOAD_FIELDS = (
     "fee_receipt_file",
     "certificate_file",
     "bank_passbook_file",
+    "photograph_file",
     "signature_file",
 )
 
@@ -81,24 +91,78 @@ def require_admin(user: User):
         raise HTTPException(status_code=403, detail="Not authorized")
 
 
+def require_admin_or_institution_coordinator(user: User):
+    if user.role not in {"admin", "institution_coordinator"}:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+
 @router.get("/users", response_model=list[AdminUserOut])
 def list_users(
-    limit: int = Query(default=200, ge=1, le=1000),
+    q: str | None = Query(default=None),
+    role: str | None = Query(default=None),
+    roles: str | None = Query(default=None),
+    limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
     require_admin(user)
-    return db.query(User).order_by(User.id.desc()).limit(limit).all()
+    query = db.query(User)
+    if role:
+        query = query.filter(User.role == role)
+    elif roles and roles.strip():
+        role_values = [item.strip() for item in roles.split(",") if item.strip()]
+        if role_values:
+            query = query.filter(User.role.in_(role_values))
+    if q and q.strip():
+        search = f"%{q.strip().lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(User.name).like(search),
+                func.lower(User.email).like(search),
+                func.lower(User.role).like(search),
+                func.lower(User.department).like(search),
+                cast(User.id, String).ilike(f"%{q.strip()}%"),
+            )
+        )
+    return query.order_by(User.id.desc()).offset(offset).limit(limit).all()
 
 
 @router.get("/applications", response_model=list[ApplicationOut])
 def list_applications(
-    limit: int = Query(default=200, ge=1, le=1000),
+    q: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    department: str | None = Query(default=None),
+    application_type: str | None = Query(default=None),
+    limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
     require_admin(user)
-    return db.query(Application).order_by(Application.created_at.desc()).limit(limit).all()
+    query = db.query(Application)
+    if status:
+        query = query.filter(Application.status == status)
+    if application_type:
+        query = query.filter(Application.application_type == application_type)
+    if department and department.strip():
+        query = query.filter(
+            func.lower(Application.data["department"].as_string()) == department.strip().lower()
+        )
+    if q and q.strip():
+        search = f"%{q.strip().lower()}%"
+        query = query.filter(
+            or_(
+                cast(Application.id, String).ilike(f"%{q.strip()}%"),
+                func.lower(Application.application_type).like(search),
+                func.lower(Application.status).like(search),
+                func.lower(Application.data["applicant_name"].as_string()).like(search),
+                func.lower(Application.data["department"].as_string()).like(search),
+                func.lower(Application.data["usn"].as_string()).like(search),
+                func.lower(Application.data["email"].as_string()).like(search),
+            )
+        )
+    return query.order_by(Application.created_at.desc()).offset(offset).limit(limit).all()
 
 
 @router.delete("/applications/{app_id}")
@@ -129,32 +193,72 @@ def admin_delete_all_applications(
 
 @router.get("/login-events", response_model=list[LoginEventOut])
 def list_login_events(
-    limit: int = Query(default=200, ge=1, le=1000),
+    q: str | None = Query(default=None),
+    limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
     require_admin(user)
-    return db.query(LoginEvent).order_by(LoginEvent.created_at.desc()).limit(limit).all()
+    query = db.query(LoginEvent)
+    if q and q.strip():
+        search = f"%{q.strip().lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(LoginEvent.email).like(search),
+                func.lower(LoginEvent.ip_address).like(search),
+                func.lower(LoginEvent.user_agent).like(search),
+                cast(LoginEvent.user_id, String).ilike(f"%{q.strip()}%"),
+            )
+        )
+    return query.order_by(LoginEvent.created_at.desc()).offset(offset).limit(limit).all()
 
 
 @router.get("/feedback", response_model=list[AdminFeedbackOut])
 def list_feedback(
-    limit: int = Query(default=500, ge=1, le=2000),
+    q: str | None = Query(default=None),
+    limit: int = Query(default=min(500, MAX_LIMIT), ge=1, le=MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
     require_admin(user)
-    return db.query(Feedback).order_by(Feedback.created_at.desc()).limit(limit).all()
+    query = db.query(Feedback)
+    if q and q.strip():
+        search = f"%{q.strip().lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(Feedback.name).like(search),
+                func.lower(Feedback.email).like(search),
+                func.lower(Feedback.role).like(search),
+                func.lower(Feedback.department).like(search),
+                func.lower(Feedback.message).like(search),
+                cast(Feedback.user_id, String).ilike(f"%{q.strip()}%"),
+            )
+        )
+    return query.order_by(Feedback.created_at.desc()).offset(offset).limit(limit).all()
 
 
 @router.get("/password-resets", response_model=list[PasswordResetOut])
 def list_password_resets(
-    limit: int = Query(default=200, ge=1, le=1000),
+    q: str | None = Query(default=None),
+    limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
     require_admin(user)
-    return db.query(PasswordResetRequest).order_by(PasswordResetRequest.created_at.desc()).limit(limit).all()
+    query = db.query(PasswordResetRequest)
+    if q and q.strip():
+        search = f"%{q.strip().lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(PasswordResetRequest.email).like(search),
+                func.lower(PasswordResetRequest.request_ip).like(search),
+                cast(PasswordResetRequest.user_id, String).ilike(f"%{q.strip()}%"),
+            )
+        )
+    return query.order_by(PasswordResetRequest.created_at.desc()).offset(offset).limit(limit).all()
 
 
 @router.get("/form-window", response_model=AdminFormWindowOut)
@@ -162,7 +266,7 @@ def get_form_window(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    require_admin(user)
+    require_admin_or_institution_coordinator(user)
     window = db.query(FormWindow).filter(FormWindow.id == 1).first()
     if not window:
         return {"start_date": None, "end_date": None}
@@ -176,7 +280,7 @@ def set_form_window(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    require_admin(user)
+    require_admin_or_institution_coordinator(user)
     if payload.end_date < payload.start_date:
         raise HTTPException(status_code=400, detail="End date must be on or after start date")
     window = db.query(FormWindow).filter(FormWindow.id == 1).first()
@@ -215,12 +319,7 @@ def admin_create_authority_user(
     user: User = Depends(get_current_user)
 ):
     require_admin(user)
-    allowed_roles = {
-        "department_coordinator",
-        "department_hod",
-        "institution_coordinator",
-    }
-    if payload.role not in allowed_roles:
+    if payload.role not in AUTHORITY_ROLES:
         raise HTTPException(status_code=400, detail="Invalid authority role")
 
     email = normalize_email(payload.email)
@@ -243,6 +342,62 @@ def admin_create_authority_user(
     db.commit()
     db.refresh(new_user)
     return new_user
+
+
+@router.get("/coordinator/authority-users", response_model=list[AdminUserOut])
+def list_authority_users_for_institution_coordinator(
+    q: str | None = Query(default=None),
+    limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_admin_or_institution_coordinator(user)
+    query = (
+        db.query(User)
+        .filter(User.role.in_(AUTHORITY_ROLES))
+        .filter(User.is_active.is_(True))
+    )
+    if user.role == "institution_coordinator":
+        query = query.filter(User.role.in_(["department_coordinator", "department_hod"]))
+    if q and q.strip():
+        search = f"%{q.strip().lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(User.name).like(search),
+                func.lower(User.email).like(search),
+                func.lower(User.role).like(search),
+                func.lower(User.department).like(search),
+                cast(User.id, String).ilike(f"%{q.strip()}%"),
+            )
+        )
+    return query.order_by(User.id.desc()).offset(offset).limit(limit).all()
+
+
+@router.delete("/coordinator/authority-users/{user_id}")
+def deactivate_authority_user_for_institution_coordinator(
+    user_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_admin_or_institution_coordinator(user)
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.role not in AUTHORITY_ROLES:
+        raise HTTPException(status_code=400, detail="Selected user is not an authority user")
+    if target.id == user.id:
+        raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
+    if user.role == "institution_coordinator" and target.role == "institution_coordinator":
+        raise HTTPException(status_code=403, detail="Institution coordinator cannot deactivate another institution coordinator")
+    if not target.is_active:
+        return {"message": "Authority user already deactivated"}
+
+    target.is_active = False
+    target.deleted_at = datetime.utcnow()
+    db.add(target)
+    db.commit()
+    return {"message": "Authority user deactivated. Record retained in database."}
 
 
 @router.delete("/users/non-admin")

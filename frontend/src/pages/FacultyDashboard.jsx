@@ -15,7 +15,8 @@ const menu = [
   "Delete Account",
   "Logout"
 ];
-const AUTO_REFRESH_MS = 5000;
+const AUTO_REFRESH_MS = 30000;
+const DASHBOARD_FETCH_LIMIT = 60;
 const MAX_FILE_BYTES = 150 * 1024;
 const MAX_FILE_LABEL = "150KB";
 const ACTIVE_TAB_STORAGE_KEY = "incentive:faculty:active-tab";
@@ -74,6 +75,7 @@ export default function FacultyDashboard() {
     permissibleClaim: "",
     feeReceiptFile: null,
     certificateFile: null,
+    photographFile: null,
     declarationAccepted: false
   });
   const [message, setMessage] = useState("");
@@ -105,9 +107,8 @@ export default function FacultyDashboard() {
   ];
 
   const refreshData = async () => {
-    const notificationsData = await api.notifications().catch(() => []);
-    const appsData = await api.myApplications().catch(() => []);
-    setApps(withNotificationAmounts(appsData, notificationsData));
+    const appsData = await api.myApplications({ limit: DASHBOARD_FETCH_LIMIT }).catch(() => []);
+    setApps(withNotificationAmounts(appsData, []));
   };
 
   const loadFeedback = async () => {
@@ -118,9 +119,19 @@ export default function FacultyDashboard() {
   useEffect(() => {
     refreshData();
     loadFeedback();
-    const interval = setInterval(refreshData, AUTO_REFRESH_MS);
-    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (active === "Feedback") {
+        loadFeedback();
+        return;
+      }
+      refreshData();
+    }, AUTO_REFRESH_MS);
+    return () => clearInterval(interval);
+  }, [active]);
 
   useEffect(() => {
     const refreshOnFocus = () => {
@@ -223,7 +234,8 @@ export default function FacultyDashboard() {
     }
     const oversizedFiles = [
       form.feeReceiptFile,
-      form.certificateFile
+      form.certificateFile,
+      form.photographFile
     ].filter((file) => file && file.size > MAX_FILE_BYTES);
     if (oversizedFiles.length > 0) {
       const fileNames = oversizedFiles.map((file) => file.name).join(", ");
@@ -251,6 +263,7 @@ export default function FacultyDashboard() {
     data.append("permissible_claim", String(form.permissibleClaim));
     if (form.feeReceiptFile) data.append("fee_receipt_file", form.feeReceiptFile);
     if (form.certificateFile) data.append("certificate_file", form.certificateFile);
+    if (form.photographFile) data.append("photograph_file", form.photographFile);
     data.append("declaration_accepted", String(form.declarationAccepted));
     try {
       await api.submitFaculty(data);
@@ -275,11 +288,12 @@ export default function FacultyDashboard() {
         permissibleClaim: "",
         feeReceiptFile: null,
         certificateFile: null,
+        photographFile: null,
         declarationAccepted: false
       });
       setMessageType("success");
       setMessage("Application submitted.");
-      setApps(await api.myApplications());
+      setApps(await api.myApplications({ limit: DASHBOARD_FETCH_LIMIT }));
     } catch (err) {
       const tooLarge = err?.status === 413 || /file too large/i.test(err?.message || "");
       setMessageType("error");
@@ -294,7 +308,7 @@ export default function FacultyDashboard() {
   };
 
   const deleteAccount = async () => {
-    if (!window.confirm("Delete your account permanently? This cannot be undone.")) return;
+    if (!window.confirm("Deactivate your account? You can contact admin to reactivate later.")) return;
     setDeleteMessage("");
     setDeletingAccount(true);
     try {
@@ -555,6 +569,17 @@ export default function FacultyDashboard() {
                         />
                         {form.certificateFile && <div className="muted mt-1 text-xs">{form.certificateFile?.name}</div>}
                       </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Photograph (JPG, Max 150KB)</label>
+                        <input
+                          className="input mt-2"
+                          type="file"
+                          accept=".jpg,.jpeg,image/jpeg"
+                          onChange={(e) => setForm({ ...form, photographFile: e.target.files?.[0] || null })}
+                          required
+                        />
+                        {form.photographFile && <div className="muted mt-1 text-xs">{form.photographFile?.name}</div>}
+                      </div>
                     </div>
                   </div>
 
@@ -608,6 +633,7 @@ export default function FacultyDashboard() {
                           permissibleClaim: "",
                           feeReceiptFile: null,
                           certificateFile: null,
+                          photographFile: null,
                           declarationAccepted: false
                         })}
                       >
@@ -845,7 +871,7 @@ export default function FacultyDashboard() {
             <div className="mt-8 animate-slide-up">
               <h2 className="text-xl font-bold font-display text-rose-600">Delete Account</h2>
               <p className="mt-2 text-sm text-black/70">
-                This permanently deletes your account and related records. This action cannot be undone.
+                This deactivates your account access. Your records are retained in the database.
               </p>
               <div className="mt-4 section-card border-rose-200 bg-rose-50/50">
                 <button

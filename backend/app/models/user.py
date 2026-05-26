@@ -1,6 +1,8 @@
-﻿from sqlalchemy import String
+from datetime import datetime
+from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
+
 
 class User(Base):
     __tablename__ = "users"
@@ -13,6 +15,8 @@ class User(Base):
     auth_provider: Mapped[str] = mapped_column(String(32), default="local")
     role: Mapped[str] = mapped_column(String(64))
     department: Mapped[str] = mapped_column(String(120))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     applications = relationship("Application", back_populates="owner")
     notifications = relationship("Notification", back_populates="user")

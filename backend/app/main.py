@@ -21,12 +21,29 @@ def _apply_runtime_schema_updates() -> None:
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(32)"))
         conn.execute(text("UPDATE users SET auth_provider = 'local' WHERE auth_provider IS NULL OR auth_provider = ''"))
         conn.execute(text("ALTER TABLE users ALTER COLUMN auth_provider SET DEFAULT 'local'"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN"))
+        conn.execute(text("UPDATE users SET is_active = TRUE WHERE is_active IS NULL"))
+        conn.execute(text("ALTER TABLE users ALTER COLUMN is_active SET DEFAULT TRUE"))
+        conn.execute(text("ALTER TABLE users ALTER COLUMN is_active SET NOT NULL"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP NULL"))
         conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub ON users (google_sub)"))
         conn.execute(text("CREATE TABLE IF NOT EXISTS email_otps (id SERIAL PRIMARY KEY, email VARCHAR(255) NOT NULL, purpose VARCHAR(32) NOT NULL, otp_hash VARCHAR(128) NOT NULL, password_hash VARCHAR(255) NULL, name VARCHAR(120) NULL, role VARCHAR(64) NULL, department VARCHAR(120) NULL, user_id INT NULL REFERENCES users(id), request_ip VARCHAR(64) NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TIMESTAMP NOT NULL, used_at TIMESTAMP NULL)"))
         conn.execute(text("ALTER TABLE email_otps ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_email_otps_email ON email_otps (email)"))
         conn.execute(text("CREATE TABLE IF NOT EXISTS password_reset_requests (id SERIAL PRIMARY KEY, user_id INT NOT NULL REFERENCES users(id), email VARCHAR(255) NOT NULL, token VARCHAR(128) NOT NULL UNIQUE, request_ip VARCHAR(64) NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, used_at TIMESTAMP NULL)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_password_reset_requests_email ON password_reset_requests (email)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_applications_owner_created ON applications (owner_id, created_at DESC)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_applications_status_created ON applications (status, created_at DESC)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_applications_type_created ON applications (application_type, created_at DESC)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_applications_created_at ON applications (created_at DESC)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_applications_department_lower ON applications ((lower(data->>'department')))"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_notifications_user_created ON notifications (user_id, created_at DESC)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_login_events_user_created ON login_events (user_id, created_at DESC)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_password_reset_requests_user_created ON password_reset_requests (user_id, created_at DESC)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_email_otps_email_purpose_created ON email_otps (email, purpose, created_at DESC)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_users_role_department ON users (role, department)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_feedbacks_created_at ON feedbacks (created_at DESC)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_notices_created_at ON notices (created_at DESC)"))
 
 
 _apply_runtime_schema_updates()
@@ -39,7 +56,8 @@ def _repair_legacy_application_reviews() -> None:
             print(f"[startup] repaired legacy application reviews: {updated}")
 
 
-_repair_legacy_application_reviews()
+if settings.run_startup_legacy_repair:
+    _repair_legacy_application_reviews()
 
 app = FastAPI(title="Incentive Claim API")
 if settings.rate_limit_enabled:

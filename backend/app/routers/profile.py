@@ -1,15 +1,11 @@
-﻿from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.routing import dashboard_path_for_user, slugify_department
 from app.core.security import decode_access_token
-from app.models.application import Application
-from app.models.feedback import Feedback
-from app.models.login_event import LoginEvent
-from app.models.notification import Notification
-from app.models.password_reset import PasswordResetRequest
 from app.models.user import User
 from app.schemas.user import UserUpdate, UserOut
 
@@ -27,6 +23,8 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if not user.is_active:
+        raise HTTPException(status_code=401, detail="Account is deactivated")
     return user
 
 
@@ -61,11 +59,8 @@ def update_me(payload: UserUpdate, db: Session = Depends(get_db), user: User = D
 
 @router.delete("/me")
 def delete_me(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    db.query(Notification).filter(Notification.user_id == user.id).delete()
-    db.query(Feedback).filter(Feedback.user_id == user.id).delete()
-    db.query(LoginEvent).filter(LoginEvent.user_id == user.id).delete()
-    db.query(PasswordResetRequest).filter(PasswordResetRequest.user_id == user.id).delete()
-    db.query(Application).filter(Application.owner_id == user.id).delete()
-    db.delete(user)
+    user.is_active = False
+    user.deleted_at = datetime.utcnow()
+    db.add(user)
     db.commit()
-    return {"message": "Account deleted"}
+    return {"message": "Account deactivated"}

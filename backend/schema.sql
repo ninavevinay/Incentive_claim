@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) NOT NULL,
   google_sub VARCHAR(255) UNIQUE,
   auth_provider VARCHAR(32) NOT NULL DEFAULT 'local',
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  deleted_at TIMESTAMP NULL,
   role VARCHAR(64) NOT NULL,
   department VARCHAR(120) NOT NULL
 );
@@ -22,6 +24,11 @@ CREATE TABLE IF NOT EXISTS applications (
   data JSONB NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS ix_applications_owner_created ON applications (owner_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_applications_status_created ON applications (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_applications_type_created ON applications (application_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_applications_created_at ON applications (created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_applications_department_lower ON applications ((lower(data->>'department')));
 
 CREATE TABLE IF NOT EXISTS notifications (
   id SERIAL PRIMARY KEY,
@@ -30,6 +37,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   is_read BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS ix_notifications_user_created ON notifications (user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS notices (
   id SERIAL PRIMARY KEY,
@@ -47,6 +55,7 @@ CREATE TABLE IF NOT EXISTS login_events (
   user_agent VARCHAR(255) NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS ix_login_events_user_created ON login_events (user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS password_reset_requests (
   id SERIAL PRIMARY KEY,
@@ -57,6 +66,8 @@ CREATE TABLE IF NOT EXISTS password_reset_requests (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   used_at TIMESTAMP NULL
 );
+CREATE INDEX IF NOT EXISTS ix_password_reset_requests_email ON password_reset_requests (email);
+CREATE INDEX IF NOT EXISTS ix_password_reset_requests_user_created ON password_reset_requests (user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS email_otps (
   id SERIAL PRIMARY KEY,
@@ -74,6 +85,7 @@ CREATE TABLE IF NOT EXISTS email_otps (
   used_at TIMESTAMP NULL
 );
 CREATE INDEX IF NOT EXISTS ix_email_otps_email ON email_otps (email);
+CREATE INDEX IF NOT EXISTS ix_email_otps_email_purpose_created ON email_otps (email, purpose, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS form_windows (
   id INT PRIMARY KEY,
@@ -94,3 +106,5 @@ CREATE TABLE IF NOT EXISTS feedbacks (
   rating INT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS ix_feedbacks_created_at ON feedbacks (created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_users_role_department ON users (role, department);

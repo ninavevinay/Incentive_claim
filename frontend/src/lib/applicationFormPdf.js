@@ -256,7 +256,8 @@ const buildBankRows = (data) => [
 const buildAttachmentRows = (app, data) => {
   const rows = [
     ["Fee payment receipt", toText(data?.fee_receipt_file)],
-    ["Certificate from Certification Authority", toText(data?.certificate_file)]
+    ["Certificate from Certification Authority", toText(data?.certificate_file)],
+    ["Photograph (JPG)", toText(data?.photograph_file)]
   ];
 
   if (app?.application_type === "student") {

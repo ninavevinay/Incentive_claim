@@ -122,7 +122,10 @@ def _validate_registration_request(payload: RequestOtpRequest, email: str, db: S
     name = payload.name.strip()
     department = payload.department.strip()
 
-    if db.query(User).filter(User.email == email).first():
+    existing_user = db.query(User).filter(User.email == email).first()
+    if existing_user:
+        if not existing_user.is_active:
+            raise HTTPException(status_code=403, detail="Account is deactivated. Contact admin.")
         raise HTTPException(status_code=400, detail="Email already registered. Use login.")
     if role in AUTHORITY_ROLES:
         raise HTTPException(status_code=403, detail="Authority self-registration is disabled. Contact admin.")
@@ -218,7 +221,10 @@ def verify_otp(payload: VerifyOtpRequest, request: Request, db: Session = Depend
     if record.otp_hash != hash_otp(email, purpose, otp):
         raise HTTPException(status_code=400, detail="Invalid OTP")
 
-    if db.query(User).filter(User.email == email).first():
+    existing_user = db.query(User).filter(User.email == email).first()
+    if existing_user:
+        if not existing_user.is_active:
+            raise HTTPException(status_code=403, detail="Account is deactivated. Contact admin.")
         raise HTTPException(status_code=400, detail="Email already registered. Use login.")
 
     role = (record.role or "").strip().lower()
@@ -248,6 +254,8 @@ def verify_otp(payload: VerifyOtpRequest, request: Request, db: Session = Depend
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
     email = normalize_email(payload.email)
     user = db.query(User).filter(User.email == email).first()
+    if user and not user.is_active:
+        raise HTTPException(status_code=403, detail="Account is deactivated. Contact admin.")
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     return _issue_token_for_user(db, user, request)
@@ -272,7 +280,7 @@ def forgot_password(payload: ForgotPasswordRequest, request: Request, db: Sessio
     if not is_allowed_email(email):
         raise HTTPException(status_code=400, detail=f"Only @{settings.allowed_email_domain} email addresses are allowed")
 
-    user = db.query(User).filter(User.email == email).first()
+    user = db.query(User).filter(User.email == email, User.is_active.is_(True)).first()
     if not user:
         return OtpRequestResponse(
             message="If the account exists, a password reset OTP has been sent.",

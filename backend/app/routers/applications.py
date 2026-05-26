@@ -1,8 +1,11 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query
 from datetime import datetime, timedelta
+from collections.abc import Callable
+from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session
 import re
 from app.core.database import get_db
+from app.core.config import settings
 from app.core.portal_notifications import queue_portal_notification
 from app.models.application import Application
 from app.models.form_window import FormWindow
@@ -14,6 +17,87 @@ import os
 import uuid
 
 router = APIRouter(prefix="/applications", tags=["applications"])
+DEFAULT_QUERY_LIMIT = settings.app_query_default_limit
+MAX_QUERY_LIMIT = settings.app_query_max_limit
+REVIEW_SCAN_BATCH = 250
+REVIEW_SCAN_CAP = 10000
+
+
+def _application_department_expr():
+    return func.lower(Application.data["department"].as_string())
+
+
+def _safe_limit(value: int) -> int:
+    return max(1, min(MAX_QUERY_LIMIT, value))
+
+
+def _safe_offset(value: int) -> int:
+    return max(0, value)
+
+
+def _apply_authority_scope_to_query(query, role: str, user_department: str, requested_department: str | None):
+    if role in {"department_coordinator", "department_hod"}:
+        target_department = requested_department or user_department
+        if _norm(target_department) != _norm(user_department):
+            raise HTTPException(status_code=403, detail="Not authorized for this department")
+        return query.filter(_application_department_expr() == _norm(target_department))
+
+    if requested_department:
+        return query.filter(_application_department_expr() == _norm(requested_department))
+
+    return query
+
+
+def _apply_application_search(query, q: str | None):
+    if not q or not q.strip():
+        return query
+    term = q.strip()
+    like_value = f"%{term.lower()}%"
+    return query.filter(
+        or_(
+            cast(Application.id, String).ilike(f"%{term}%"),
+            func.lower(Application.application_type).like(like_value),
+            func.lower(Application.status).like(like_value),
+            func.lower(Application.data["applicant_name"].as_string()).like(like_value),
+            func.lower(Application.data["department"].as_string()).like(like_value),
+            func.lower(Application.data["usn"].as_string()).like(like_value),
+            func.lower(Application.data["email"].as_string()).like(like_value),
+            func.lower(Application.data["course_title"].as_string()).like(like_value),
+        )
+    )
+
+
+def _collect_filtered_applications(
+    base_query,
+    matcher: Callable[[Application], bool],
+    *,
+    limit: int,
+    offset: int,
+) -> list[Application]:
+    collected: list[Application] = []
+    skipped = 0
+    scanned = 0
+    page_offset = 0
+
+    while scanned < REVIEW_SCAN_CAP and len(collected) < limit:
+        batch = base_query.offset(page_offset).limit(REVIEW_SCAN_BATCH).all()
+        if not batch:
+            break
+        batch_size = len(batch)
+        scanned += batch_size
+        page_offset += batch_size
+
+        for app in batch:
+            if not matcher(app):
+                continue
+            if skipped < offset:
+                skipped += 1
+                continue
+            collected.append(app)
+            if len(collected) >= limit:
+                break
+
+    return collected
 
 
 def _filter_apps_by_authority_scope(
@@ -54,6 +138,8 @@ PDF_UPLOAD_EXTENSIONS = {".pdf"}
 PDF_UPLOAD_CONTENT_TYPES = {"application/pdf"}
 SIGNATURE_UPLOAD_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 SIGNATURE_UPLOAD_CONTENT_TYPES = {"image/jpeg", "image/png"}
+PHOTO_UPLOAD_EXTENSIONS = {".jpg", ".jpeg"}
+PHOTO_UPLOAD_CONTENT_TYPES = {"image/jpeg"}
 ROLE_LABELS = {
     "department_coordinator": "Department Coordinator",
     "department_hod": "Department HOD",
@@ -478,6 +564,7 @@ def create_student_application(
     fee_receipt_file: UploadFile = File(...),
     certificate_file: UploadFile = File(...),
     bank_passbook_file: UploadFile = File(...),
+    photograph_file: UploadFile = File(...),
     signature_file: UploadFile | None = File(None),
     declaration_accepted: bool = Form(...),
     db: Session = Depends(get_db),
@@ -486,15 +573,16 @@ def create_student_application(
     _enforce_form_window_open(db)
     if user.role != "student":
         raise HTTPException(status_code=403, detail="Only students can submit this form")
-    existing = db.query(Application).filter(
-        Application.owner_id == user.id,
-        Application.application_type == "student"
-    ).all()
     six_months_ago = datetime.utcnow() - timedelta(days=180)
-    recent_count = sum(
-        1
-        for app_item in existing
-        if app_item.created_at and app_item.created_at >= six_months_ago
+    recent_count = (
+        db.query(func.count(Application.id))
+        .filter(
+            Application.owner_id == user.id,
+            Application.application_type == "student",
+            Application.created_at >= six_months_ago,
+        )
+        .scalar()
+        or 0
     )
     if recent_count >= 2:
         raise HTTPException(status_code=400, detail="Only two student applications are allowed in six months")
@@ -543,6 +631,14 @@ def create_student_application(
         "fee_receipt_file": _save_upload(fee_receipt_file, applicant_name, "fee_receipt"),
         "certificate_file": _save_upload(certificate_file, applicant_name, "certificate"),
         "bank_passbook_file": _save_upload(bank_passbook_file, applicant_name, "bank_passbook"),
+        "photograph_file": _save_upload(
+            photograph_file,
+            applicant_name,
+            "photograph",
+            allowed_extensions=PHOTO_UPLOAD_EXTENSIONS,
+            allowed_content_types=PHOTO_UPLOAD_CONTENT_TYPES,
+            invalid_type_detail="Only JPG files are allowed for photograph upload",
+        ),
         "signature_file": _save_upload(
             signature_file,
             applicant_name,
@@ -607,6 +703,7 @@ def create_faculty_application(
     permissible_claim: float = Form(...),
     fee_receipt_file: UploadFile = File(...),
     certificate_file: UploadFile = File(...),
+    photograph_file: UploadFile = File(...),
     signature_file: UploadFile | None = File(None),
     declaration_accepted: bool = Form(...),
     db: Session = Depends(get_db),
@@ -615,15 +712,16 @@ def create_faculty_application(
     _enforce_form_window_open(db)
     if user.role != "faculty":
         raise HTTPException(status_code=403, detail="Only faculty can submit this form")
-    existing = db.query(Application).filter(
-        Application.owner_id == user.id,
-        Application.application_type == "faculty"
-    ).all()
     six_months_ago = datetime.utcnow() - timedelta(days=180)
-    recent_count = sum(
-        1
-        for app_item in existing
-        if app_item.created_at and app_item.created_at >= six_months_ago
+    recent_count = (
+        db.query(func.count(Application.id))
+        .filter(
+            Application.owner_id == user.id,
+            Application.application_type == "faculty",
+            Application.created_at >= six_months_ago,
+        )
+        .scalar()
+        or 0
     )
     if recent_count >= 2:
         raise HTTPException(status_code=400, detail="Only two faculty applications are allowed in six months")
@@ -661,6 +759,14 @@ def create_faculty_application(
         "permissible_claim": permissible_claim,
         "fee_receipt_file": _save_upload(fee_receipt_file, applicant_name, "fee_receipt"),
         "certificate_file": _save_upload(certificate_file, applicant_name, "certificate"),
+        "photograph_file": _save_upload(
+            photograph_file,
+            applicant_name,
+            "photograph",
+            allowed_extensions=PHOTO_UPLOAD_EXTENSIONS,
+            allowed_content_types=PHOTO_UPLOAD_CONTENT_TYPES,
+            invalid_type_detail="Only JPG files are allowed for photograph upload",
+        ),
         "signature_file": _save_upload(
             signature_file,
             applicant_name,
@@ -703,8 +809,22 @@ def create_faculty_application(
     db.refresh(app)
     return app
 @router.get("/mine", response_model=list[ApplicationOut])
-def my_applications(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    apps = db.query(Application).filter(Application.owner_id == user.id).order_by(Application.created_at.desc()).all()
+def my_applications(
+    status: str | None = Query(default=None),
+    limit: int = Query(default=DEFAULT_QUERY_LIMIT, ge=1, le=MAX_QUERY_LIMIT),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    query = db.query(Application).filter(Application.owner_id == user.id)
+    if status:
+        query = query.filter(Application.status == status)
+    apps = (
+        query.order_by(Application.created_at.desc())
+        .offset(_safe_offset(offset))
+        .limit(_safe_limit(limit))
+        .all()
+    )
     _backfill_approved_amount_for_apps(db, apps)
     return apps
 
@@ -719,6 +839,9 @@ def track(application_id: int, db: Session = Depends(get_db), user: User = Depen
 @router.get("/pending", response_model=list[ApplicationOut])
 def pending_applications(
     department: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    limit: int = Query(default=DEFAULT_QUERY_LIMIT, ge=1, le=MAX_QUERY_LIMIT),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -731,28 +854,51 @@ def pending_applications(
         "institution_coordinator": "pending_institution_coordinator"
     }
     target_status = status_map[role]
-    apps = db.query(Application).filter(Application.status == target_status).order_by(Application.created_at.desc()).all()
-    scoped = _filter_apps_by_authority_scope(apps, role, user.department, department)
-    _backfill_approved_amount_for_apps(db, scoped)
-    return scoped
+    query = db.query(Application).filter(Application.status == target_status)
+    query = _apply_authority_scope_to_query(query, role, user.department, department)
+    query = _apply_application_search(query, q)
+    apps = (
+        query.order_by(Application.created_at.desc())
+        .offset(_safe_offset(offset))
+        .limit(_safe_limit(limit))
+        .all()
+    )
+    _backfill_approved_amount_for_apps(db, apps)
+    return apps
 
 @router.get("/all", response_model=list[ApplicationOut])
 def all_applications(
     department: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    limit: int = Query(default=DEFAULT_QUERY_LIMIT, ge=1, le=MAX_QUERY_LIMIT),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
     role = user.role
     if role not in {"department_coordinator", "department_hod", "institution_coordinator"}:
         raise HTTPException(status_code=403, detail="Not authorized")
-    apps = db.query(Application).order_by(Application.created_at.desc()).all()
-    scoped = _filter_apps_by_authority_scope(apps, role, user.department, department)
-    _backfill_approved_amount_for_apps(db, scoped)
-    return scoped
+    query = db.query(Application)
+    query = _apply_authority_scope_to_query(query, role, user.department, department)
+    if status:
+        query = query.filter(Application.status == status)
+    query = _apply_application_search(query, q)
+    apps = (
+        query.order_by(Application.created_at.desc())
+        .offset(_safe_offset(offset))
+        .limit(_safe_limit(limit))
+        .all()
+    )
+    _backfill_approved_amount_for_apps(db, apps)
+    return apps
 
 @router.get("/my-reviewed", response_model=list[ApplicationOut])
 def my_reviewed_applications(
     action: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    limit: int = Query(default=DEFAULT_QUERY_LIMIT, ge=1, le=MAX_QUERY_LIMIT),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -762,10 +908,33 @@ def my_reviewed_applications(
     if action not in {None, "approve", "reject"}:
         raise HTTPException(status_code=400, detail="Invalid action")
 
-    repair_legacy_review_history(db)
-
-    apps = db.query(Application).order_by(Application.created_at.desc()).all()
-    filtered: list[Application] = []
+    query = db.query(Application)
+    if role in {"department_coordinator", "department_hod"}:
+        query = query.filter(_application_department_expr() == _norm(user.department))
+    if action == "reject":
+        query = query.filter(Application.status == "rejected")
+    elif action == "approve":
+        if role == "department_coordinator":
+            query = query.filter(
+                Application.status.in_(
+                    [
+                        "pending_department_hod",
+                        "pending_institution_coordinator",
+                        "approved",
+                        "rejected",
+                    ]
+                )
+            )
+        elif role == "department_hod":
+            query = query.filter(
+                Application.status.in_(
+                    ["pending_institution_coordinator", "approved", "rejected"]
+                )
+            )
+        else:
+            query = query.filter(Application.status == "approved")
+    query = _apply_application_search(query, q)
+    ordered_query = query.order_by(Application.created_at.desc())
 
     def in_user_scope(app: Application) -> bool:
         if role == "institution_coordinator":
@@ -793,10 +962,9 @@ def my_reviewed_applications(
         data = app.data or {}
         return app.status == "rejected" and data.get("last_reject_role") == role
 
-    for app in apps:
+    def is_my_review(app: Application) -> bool:
         if not in_user_scope(app):
-            continue
-
+            return False
         reviews = (app.data or {}).get("reviews") or []
         has_my_review = any(
             (review.get("reviewer_id") is not None and str(review.get("reviewer_id")) == str(user.id))
@@ -817,15 +985,23 @@ def my_reviewed_applications(
             elif action == "reject":
                 has_my_review = infer_rejected_by_role(app)
 
-        if has_my_review:
-            filtered.append(app)
+        return has_my_review
 
+    filtered = _collect_filtered_applications(
+        ordered_query,
+        is_my_review,
+        limit=_safe_limit(limit),
+        offset=_safe_offset(offset),
+    )
     _backfill_approved_amount_for_apps(db, filtered)
     return filtered
 
 @router.get("/role-reviewed", response_model=list[ApplicationOut])
 def role_reviewed_applications(
     action: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    limit: int = Query(default=DEFAULT_QUERY_LIMIT, ge=1, le=MAX_QUERY_LIMIT),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -835,20 +1011,31 @@ def role_reviewed_applications(
     if action not in {None, "approve", "reject"}:
         raise HTTPException(status_code=400, detail="Invalid action")
 
-    repair_legacy_review_history(db)
-    apps = db.query(Application).order_by(Application.created_at.desc()).all()
-    filtered: list[Application] = []
-    for app in apps:
+    query = db.query(Application)
+    if role in {"department_coordinator", "department_hod"}:
+        query = query.filter(_application_department_expr() == _norm(user.department))
+    if action == "reject":
+        query = query.filter(Application.status == "rejected")
+    elif action == "approve" and role == "institution_coordinator":
+        query = query.filter(Application.status == "approved")
+    query = _apply_application_search(query, q)
+    ordered_query = query.order_by(Application.created_at.desc())
+
+    def has_role_review(app: Application) -> bool:
         reviews = (app.data or {}).get("reviews") or []
-        has_role_review = any(
+        return any(
             review.get("role") == role and (action is None or review.get("action") == action)
             for review in reviews
         )
-        if has_role_review:
-            filtered.append(app)
-    scoped = _filter_apps_by_authority_scope(filtered, role, user.department, None)
-    _backfill_approved_amount_for_apps(db, scoped)
-    return scoped
+
+    filtered = _collect_filtered_applications(
+        ordered_query,
+        has_role_review,
+        limit=_safe_limit(limit),
+        offset=_safe_offset(offset),
+    )
+    _backfill_approved_amount_for_apps(db, filtered)
+    return filtered
 
 @router.post("/{application_id}/review", response_model=ApplicationOut)
 def review_application(application_id: int, payload: ApplicationReview, background_tasks: BackgroundTasks, db: Session = Depends(get_db), user: User = Depends(get_current_user)):

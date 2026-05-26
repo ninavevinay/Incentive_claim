@@ -8,11 +8,18 @@ import StudentDashboard from "./pages/StudentDashboard.jsx";
 import FacultyDashboard from "./pages/FacultyDashboard.jsx";
 import AuthorityDashboard from "./pages/AuthorityDashboard.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
+import LandingPage from "./pages/LandingPage.jsx";
 import { AuthProvider, useAuth } from "./lib/auth.jsx";
 import { getDashboardPathForUser, slugifyDepartment } from "./lib/routeMap.js";
 import { AppHeader, AppFooter } from "./components/layout/index.js";
 
 function getSeoForPath(pathname) {
+  if (pathname === "/") {
+    return {
+      title: "Incentive Claim Portal | SBJIT",
+      description: "Digital portal for incentive applications, review workflows, and approval tracking."
+    };
+  }
   if (pathname.startsWith("/login")) {
     return {
       title: "Login | Incentive Claim Portal",
@@ -104,9 +111,18 @@ function AuthorityEntryRedirect() {
   return <Navigate to={getDashboardPathForUser(user)} replace />;
 }
 
+function HomeEntry() {
+  const { user, loading } = useAuth();
+
+  if (loading) return null;
+  if (user) return <Navigate to={getDashboardPathForUser(user)} replace />;
+  return <LandingPage />;
+}
+
 export default function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const location = useLocation();
+  const isLandingRoute = location.pathname === "/";
   const isDashboardRoute =
     location.pathname.startsWith("/student") ||
     location.pathname.startsWith("/faculty") ||
@@ -130,9 +146,13 @@ export default function App() {
     }
   }, [location.pathname]);
 
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
+
   return (
     <AuthProvider>
-      <div className="app-shell">
+      <div className="app-shell min-h-screen flex flex-col">
         <AppHeader
           isDashboardRoute={isDashboardRoute}
           mobileNavOpen={mobileNavOpen}
@@ -140,9 +160,9 @@ export default function App() {
         />
 
         {/* Main Content */}
-        <main className="flex-1">
+        <main className="flex-1 min-h-0 flex flex-col">
           <Routes>
-            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="/" element={<HomeEntry />} />
             <Route path="/register" element={<Register />} />
             <Route path="/register-authority" element={<Navigate to="/register" replace />} />
             <Route path="/register-admin" element={<AdminRegister />} />
@@ -213,11 +233,11 @@ export default function App() {
                 </AuthorityProtected>
               }
             />
-            <Route path="*" element={<Navigate to="/login" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
 
-        <AppFooter />
+        <AppFooter useElearningFooter={isLandingRoute} />
       </div>
     </AuthProvider>
   );

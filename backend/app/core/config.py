@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     otp_expire_minutes: int = Field(default=10, alias="OTP_EXPIRE_MINUTES")
     otp_resend_seconds: int = Field(default=60, alias="OTP_RESEND_SECONDS")
     otp_length: int = Field(default=6, alias="OTP_LENGTH")
+    db_pool_size: int = Field(default=20, alias="DB_POOL_SIZE")
+    db_max_overflow: int = Field(default=40, alias="DB_MAX_OVERFLOW")
+    db_pool_timeout_seconds: int = Field(default=30, alias="DB_POOL_TIMEOUT_SECONDS")
+    db_pool_recycle_seconds: int = Field(default=1800, alias="DB_POOL_RECYCLE_SECONDS")
+    db_pool_use_lifo: bool = Field(default=True, alias="DB_POOL_USE_LIFO")
+    db_statement_timeout_ms: int = Field(default=30000, alias="DB_STATEMENT_TIMEOUT_MS")
+    app_query_default_limit: int = Field(default=100, alias="APP_QUERY_DEFAULT_LIMIT")
+    app_query_max_limit: int = Field(default=500, alias="APP_QUERY_MAX_LIMIT")
+    run_startup_legacy_repair: bool = Field(default=True, alias="RUN_STARTUP_LEGACY_REPAIR")
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
@@ -54,6 +63,26 @@ class Settings(BaseSettings):
     def ensure_positive_numbers(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("OTP settings must be positive")
+        return value
+
+    @field_validator(
+        "db_pool_size",
+        "db_pool_timeout_seconds",
+        "db_pool_recycle_seconds",
+        "app_query_default_limit",
+        "app_query_max_limit",
+    )
+    @classmethod
+    def ensure_positive_scaling_values(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("Scaling settings must be positive")
+        return value
+
+    @field_validator("db_max_overflow", "db_statement_timeout_ms")
+    @classmethod
+    def ensure_non_negative_scaling_values(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("Scaling settings cannot be negative")
         return value
 
     @property

@@ -28,6 +28,7 @@ class StudentApplicationCreate(BaseModel):
     fee_receipt_file: str | None = None
     certificate_file: str | None = None
     bank_passbook_file: str | None = None
+    photograph_file: str | None = None
     signature_file: str | None = None
     declaration_accepted: bool
 
@@ -52,6 +53,7 @@ class FacultyApplicationCreate(BaseModel):
     permissible_claim: float
     fee_receipt_file: str | None = None
     certificate_file: str | None = None
+    photograph_file: str | None = None
     signature_file: str | None = None
     declaration_accepted: bool
 

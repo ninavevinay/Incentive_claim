@@ -36,8 +36,27 @@ const ADMIN_SECTIONS = [
   "All Applications",
   "Form Filling Window"
 ];
-const AUTO_REFRESH_MS = 8000;
+const AUTO_REFRESH_MS = 30000;
+const ADMIN_FETCH_LIMIT = 150;
+const ADMIN_UI_PAGE_SIZE = 12;
 const ACTIVE_SECTION_STORAGE_KEY = "incentive:admin:active-section";
+
+const clampPage = (page, totalPages) => {
+  const safeTotal = Math.max(1, totalPages || 1);
+  return Math.min(Math.max(1, page), safeTotal);
+};
+
+const paginateRows = (rows, page, pageSize = ADMIN_UI_PAGE_SIZE) => {
+  const list = Array.isArray(rows) ? rows : [];
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  const currentPage = clampPage(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  return {
+    rows: list.slice(start, start + pageSize),
+    currentPage,
+    totalPages,
+  };
+};
 
 export default function AdminDashboard() {
   const { user, setUser } = useAuth();
@@ -72,13 +91,60 @@ export default function AdminDashboard() {
     department: ""
   });
   const [authorityMessage, setAuthorityMessage] = useState("");
+  const [initialDataLoaded, setInitialDataLoaded] = useState(false);
+  const [usersPage, setUsersPage] = useState(1);
+  const [authorityPage, setAuthorityPage] = useState(1);
+  const [loginEventsPage, setLoginEventsPage] = useState(1);
+  const [feedbackPage, setFeedbackPage] = useState(1);
+  const [applicationsPage, setApplicationsPage] = useState(1);
+
+  const loadUsersData = async ({ search = "", authorityOnly = false } = {}) => {
+    const params = {
+      limit: ADMIN_FETCH_LIMIT,
+      q: search || undefined,
+      roles: authorityOnly
+        ? "department_coordinator,department_hod,institution_coordinator"
+        : undefined
+    };
+    const usersData = await api.adminUsers(params);
+    setUsers(usersData);
+  };
+
+  const loadApplicationsData = async (search = "") => {
+    const appsData = await api.adminApplications({
+      limit: ADMIN_FETCH_LIMIT,
+      q: search || undefined
+    });
+    setApplications(appsData);
+  };
+
+  const loadLoginEventsData = async () => {
+    const loginData = await api.adminLoginEvents({ limit: ADMIN_FETCH_LIMIT });
+    setLoginEvents(loginData);
+  };
+
+  const loadFeedbackData = async (search = "") => {
+    const feedbackData = await api.adminFeedback({
+      limit: ADMIN_FETCH_LIMIT,
+      q: search || undefined
+    });
+    setFeedbackEntries(feedbackData);
+  };
+
+  const loadFormWindowData = async () => {
+    const formWindowData = await api.adminFormWindow();
+    setFormWindowForm({
+      start_date: formWindowData?.start_date || "",
+      end_date: formWindowData?.end_date || ""
+    });
+  };
 
   const loadAdminData = async () => {
     const [usersData, appsData, loginData, feedbackData, formWindowData] = await Promise.all([
-      api.adminUsers(),
-      api.adminApplications(),
-      api.adminLoginEvents(),
-      api.adminFeedback(),
+      api.adminUsers({ limit: ADMIN_FETCH_LIMIT }),
+      api.adminApplications({ limit: ADMIN_FETCH_LIMIT }),
+      api.adminLoginEvents({ limit: ADMIN_FETCH_LIMIT }),
+      api.adminFeedback({ limit: ADMIN_FETCH_LIMIT }),
       api.adminFormWindow()
     ]);
     setUsers(usersData);
@@ -91,11 +157,62 @@ export default function AdminDashboard() {
     });
   };
 
+  const syncActiveSectionData = async () => {
+    if (activeSection === "Authority Users") {
+      await loadUsersData({ search: authorityFilter.trim(), authorityOnly: true });
+      return;
+    }
+    if (activeSection === "Registered Users") {
+      await loadUsersData({ search: userFilter.trim() });
+      return;
+    }
+    if (activeSection === "Login Events") {
+      await loadLoginEventsData();
+      return;
+    }
+    if (activeSection === "User Feedback") {
+      await loadFeedbackData(feedbackFilter.trim());
+      return;
+    }
+    if (activeSection === "All Applications") {
+      await loadApplicationsData(applicationFilter.trim());
+      return;
+    }
+    if (activeSection === "Form Filling Window") {
+      await loadFormWindowData();
+      return;
+    }
+    await loadUsersData({ authorityOnly: true });
+  };
+
   useEffect(() => {
     let cancelled = false;
-    const syncAdminData = async () => {
+    const bootstrap = async () => {
       try {
         await loadAdminData();
+        if (!cancelled) {
+          setInitialDataLoaded(true);
+          setError("");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message || "Failed to load admin data");
+        }
+      }
+    };
+    bootstrap();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!initialDataLoaded) return;
+    let cancelled = false;
+    let debounceTimer = null;
+    const syncAdminData = async () => {
+      try {
+        await syncActiveSectionData();
         if (!cancelled) {
           setError("");
         }
@@ -105,8 +222,12 @@ export default function AdminDashboard() {
         }
       }
     };
-    syncAdminData();
-    const interval = setInterval(syncAdminData, AUTO_REFRESH_MS);
+    debounceTimer = setTimeout(syncAdminData, 250);
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        syncAdminData();
+      }
+    }, AUTO_REFRESH_MS);
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         syncAdminData();
@@ -116,11 +237,12 @@ export default function AdminDashboard() {
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
       clearInterval(interval);
       window.removeEventListener("focus", syncAdminData);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [initialDataLoaded, activeSection, userFilter, authorityFilter, applicationFilter, feedbackFilter]);
 
   useEffect(() => {
     if (!ADMIN_SECTIONS.includes(activeSection)) {
@@ -168,7 +290,40 @@ export default function AdminDashboard() {
   });
 
   const sortedApplications = [...filteredApplications].sort((a, b) => a.id - b.id);
+  const usersPageData = paginateRows(filteredUsers, usersPage);
+  const authorityPageData = paginateRows(filteredAuthorityUsers, authorityPage);
+  const loginEventsPageData = paginateRows(loginEvents, loginEventsPage);
+  const feedbackPageData = paginateRows(filteredFeedback, feedbackPage);
+  const applicationsPageData = paginateRows(sortedApplications, applicationsPage);
   const selectedApplication = sortedApplications.find((app) => app.id === expandedAppId) || null;
+
+  useEffect(() => {
+    setUsersPage((prev) => clampPage(prev, Math.ceil(Math.max(filteredUsers.length, 1) / ADMIN_UI_PAGE_SIZE)));
+  }, [filteredUsers.length]);
+
+  useEffect(() => {
+    setAuthorityPage((prev) =>
+      clampPage(prev, Math.ceil(Math.max(filteredAuthorityUsers.length, 1) / ADMIN_UI_PAGE_SIZE))
+    );
+  }, [filteredAuthorityUsers.length]);
+
+  useEffect(() => {
+    setLoginEventsPage((prev) =>
+      clampPage(prev, Math.ceil(Math.max(loginEvents.length, 1) / ADMIN_UI_PAGE_SIZE))
+    );
+  }, [loginEvents.length]);
+
+  useEffect(() => {
+    setFeedbackPage((prev) =>
+      clampPage(prev, Math.ceil(Math.max(filteredFeedback.length, 1) / ADMIN_UI_PAGE_SIZE))
+    );
+  }, [filteredFeedback.length]);
+
+  useEffect(() => {
+    setApplicationsPage((prev) =>
+      clampPage(prev, Math.ceil(Math.max(sortedApplications.length, 1) / ADMIN_UI_PAGE_SIZE))
+    );
+  }, [sortedApplications.length]);
 
   const submitAuthorityUser = async (e) => {
     e.preventDefault();
@@ -524,12 +679,15 @@ export default function AdminDashboard() {
                 className="input"
                 placeholder="Search users by name, email, role, department"
                 value={userFilter}
-                onChange={(e) => setUserFilter(e.target.value)}
+                onChange={(e) => {
+                  setUserFilter(e.target.value);
+                  setUsersPage(1);
+                }}
               />
             </div>
             <div className="mt-4">
               <div className="grid gap-3 sm:hidden">
-                {filteredUsers.map((u) => (
+                {usersPageData.rows.map((u) => (
                   <div key={u.id} className="panel p-3">
                     <div className="flex items-center justify-between gap-2">
                       <div className="font-semibold">{u.name}</div>
@@ -563,7 +721,7 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-black/10">
-                    {filteredUsers.map((u) => (
+                    {usersPageData.rows.map((u) => (
                       <tr key={u.id}>
                         <td className="py-3 pr-4 font-medium">{u.name}</td>
                         <td className="py-3 pr-4">{u.email}</td>
@@ -588,6 +746,29 @@ export default function AdminDashboard() {
                 </table>
               </div>
               {filteredUsers.length === 0 && <div className="muted mt-3 text-sm">No users found.</div>}
+              {filteredUsers.length > 0 && (
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <div className="muted text-sm">Page {usersPageData.currentPage} of {usersPageData.totalPages}</div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      disabled={usersPageData.currentPage <= 1}
+                      onClick={() => setUsersPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      Prev
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      disabled={usersPageData.currentPage >= usersPageData.totalPages}
+                      onClick={() => setUsersPage((prev) => Math.min(usersPageData.totalPages, prev + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
               {usersMessage.text && (
                 <div className={`mt-3 text-sm ${usersMessage.type === "error" ? "text-rose-600" : "text-emerald-600"}`}>
                   {usersMessage.text}
@@ -608,12 +789,15 @@ export default function AdminDashboard() {
                 className="input"
                 placeholder="Search authority users by name, email, department, or role"
                 value={authorityFilter}
-                onChange={(e) => setAuthorityFilter(e.target.value)}
+                onChange={(e) => {
+                  setAuthorityFilter(e.target.value);
+                  setAuthorityPage(1);
+                }}
               />
             </div>
             <div className="mt-4">
               <div className="grid gap-3 sm:hidden">
-                {filteredAuthorityUsers.map((u) => (
+                {authorityPageData.rows.map((u) => (
                   <div key={u.id} className="panel p-3">
                     <div className="font-semibold">{u.name}</div>
                     <div className="mt-1 text-xs text-black/60">{u.email}</div>
@@ -633,7 +817,7 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-black/10">
-                    {filteredAuthorityUsers.map((u) => (
+                    {authorityPageData.rows.map((u) => (
                       <tr key={u.id}>
                         <td className="py-3 pr-4 font-medium">{u.name}</td>
                         <td className="py-3 pr-4">{u.email}</td>
@@ -645,6 +829,29 @@ export default function AdminDashboard() {
                 </table>
               </div>
               {filteredAuthorityUsers.length === 0 && <div className="muted mt-3 text-sm">No authority users found.</div>}
+              {filteredAuthorityUsers.length > 0 && (
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <div className="muted text-sm">Page {authorityPageData.currentPage} of {authorityPageData.totalPages}</div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      disabled={authorityPageData.currentPage <= 1}
+                      onClick={() => setAuthorityPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      Prev
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      disabled={authorityPageData.currentPage >= authorityPageData.totalPages}
+                      onClick={() => setAuthorityPage((prev) => Math.min(authorityPageData.totalPages, prev + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           )}
@@ -658,7 +865,7 @@ export default function AdminDashboard() {
           </div>
           <div className="mt-4">
             <div className="grid gap-3 sm:hidden">
-              {loginEvents.map((e) => (
+              {loginEventsPageData.rows.map((e) => (
                 <div key={e.id} className="panel p-3">
                   <div className="font-semibold">{e.email}</div>
                   <div className="mt-1 text-xs text-black/60">{e.ip_address}</div>
@@ -678,7 +885,7 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/10">
-                  {loginEvents.map((e) => (
+                  {loginEventsPageData.rows.map((e) => (
                     <tr key={e.id}>
                       <td className="py-3 pr-4 font-medium">{e.email}</td>
                       <td className="py-3 pr-4">{e.ip_address}</td>
@@ -690,6 +897,29 @@ export default function AdminDashboard() {
               </table>
             </div>
             {loginEvents.length === 0 && <div className="muted mt-3 text-sm">No login events.</div>}
+            {loginEvents.length > 0 && (
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <div className="muted text-sm">Page {loginEventsPageData.currentPage} of {loginEventsPageData.totalPages}</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    disabled={loginEventsPageData.currentPage <= 1}
+                    onClick={() => setLoginEventsPage((prev) => Math.max(1, prev - 1))}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    disabled={loginEventsPageData.currentPage >= loginEventsPageData.totalPages}
+                    onClick={() => setLoginEventsPage((prev) => Math.min(loginEventsPageData.totalPages, prev + 1))}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </section>
         )}
@@ -715,12 +945,15 @@ export default function AdminDashboard() {
               className="input"
               placeholder="Search by user, role, benefit status, department, or feedback text"
               value={feedbackFilter}
-              onChange={(e) => setFeedbackFilter(e.target.value)}
+              onChange={(e) => {
+                setFeedbackFilter(e.target.value);
+                setFeedbackPage(1);
+              }}
             />
           </div>
           <div className="mt-4">
             <div className="grid gap-3 sm:hidden">
-              {filteredFeedback.map((entry) => (
+              {feedbackPageData.rows.map((entry) => (
                 <div key={entry.id} className="panel p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="font-semibold">{entry.name}</div>
@@ -749,7 +982,7 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/10">
-                  {filteredFeedback.map((entry) => (
+                  {feedbackPageData.rows.map((entry) => (
                     <tr key={entry.id}>
                       <td className="py-3 pr-4">
                         <div className="font-medium">{entry.name}</div>
@@ -767,6 +1000,29 @@ export default function AdminDashboard() {
               </table>
             </div>
             {filteredFeedback.length === 0 && <div className="muted mt-3 text-sm">No feedback found.</div>}
+            {filteredFeedback.length > 0 && (
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <div className="muted text-sm">Page {feedbackPageData.currentPage} of {feedbackPageData.totalPages}</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    disabled={feedbackPageData.currentPage <= 1}
+                    onClick={() => setFeedbackPage((prev) => Math.max(1, prev - 1))}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    disabled={feedbackPageData.currentPage >= feedbackPageData.totalPages}
+                    onClick={() => setFeedbackPage((prev) => Math.min(feedbackPageData.totalPages, prev + 1))}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
             {feedbackExportMessage && <div className="mt-3 text-sm text-black/70">{feedbackExportMessage}</div>}
           </div>
         </section>
@@ -832,7 +1088,10 @@ export default function AdminDashboard() {
               className="input"
               placeholder="Search applications by applicant, status, department, type"
               value={applicationFilter}
-              onChange={(e) => setApplicationFilter(e.target.value)}
+              onChange={(e) => {
+                setApplicationFilter(e.target.value);
+                setApplicationsPage(1);
+              }}
             />
           </div>
           <div className="mt-4">
@@ -866,7 +1125,7 @@ export default function AdminDashboard() {
                   <div className="text-xs uppercase tracking-[0.2em] text-black/40">All Application Details</div>
                   <button className="btn btn-ghost" type="button" onClick={() => setViewMode("list")}>Back</button>
                 </div>
-                {sortedApplications.map((app) => (
+                {applicationsPageData.rows.map((app) => (
                   <div key={app.id} className="panel p-4 text-sm">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="font-semibold">Application #{app.id} - {app.data?.applicant_name || "-"}</div>
@@ -896,7 +1155,7 @@ export default function AdminDashboard() {
             ) : (
               <>
                 <div className="grid gap-3 sm:hidden">
-                  {sortedApplications.map((app) => (
+                  {applicationsPageData.rows.map((app) => (
                     <div key={app.id} className="panel p-3">
                       <div className="flex items-center justify-between gap-2">
                         <div className="font-semibold">
@@ -946,7 +1205,7 @@ export default function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-black/10">
-                      {sortedApplications.map((app) => (
+                      {applicationsPageData.rows.map((app) => (
                         <tr key={app.id}>
                           <td className="py-3 pr-4">{app.id}</td>
                           <td className="py-3 pr-4 font-medium">{app.data?.applicant_name || app.data?.application_name || "-"}</td>
@@ -984,6 +1243,29 @@ export default function AdminDashboard() {
             {applicationsMessage.text && (
               <div className={`mt-3 text-sm ${applicationsMessage.type === "error" ? "text-rose-600" : "text-emerald-600"}`}>
                 {applicationsMessage.text}
+              </div>
+            )}
+            {viewMode !== "details" && sortedApplications.length > 0 && (
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <div className="muted text-sm">Page {applicationsPageData.currentPage} of {applicationsPageData.totalPages}</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    disabled={applicationsPageData.currentPage <= 1}
+                    onClick={() => setApplicationsPage((prev) => Math.max(1, prev - 1))}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    disabled={applicationsPageData.currentPage >= applicationsPageData.totalPages}
+                    onClick={() => setApplicationsPage((prev) => Math.min(applicationsPageData.totalPages, prev + 1))}
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             )}
             {viewMode === "list" && sortedApplications.length === 0 && (
