@@ -1240,6 +1240,74 @@ select:focus-visible, textarea:focus-visible {
   background: rgba(238, 242, 255, 0.7);
 }
 
+/* Submit Popup */
+.submit-popup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(11, 29, 44, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.submit-popup-card {
+  width: min(520px, 100%);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.97), rgba(243, 251, 255, 0.96));
+  box-shadow: var(--shadow-lg);
+  padding: 1.5rem;
+}
+
+.submit-popup-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.submit-popup-icon.is-success {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  color: #047857;
+}
+
+.submit-popup-icon.is-error {
+  background: rgba(239, 68, 68, 0.13);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #b91c1c;
+}
+
+.submit-popup-title {
+  margin: 0.9rem 0 0;
+  font-family: "Sora", "Inter", system-ui, sans-serif;
+  font-size: 1.2rem;
+  line-height: 1.25;
+  color: #123453;
+}
+
+.submit-popup-message {
+  margin: 0.5rem 0 0;
+  color: #2e4a64;
+  line-height: 1.55;
+  font-size: 0.96rem;
+}
+
+.submit-popup-actions {
+  margin-top: 1.1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
 /* ── Alert boxes ── */
 .alert-warning {
   @apply rounded-xl border px-4 py-3 text-sm;

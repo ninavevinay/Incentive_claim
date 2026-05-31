@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
+import SubmitStatusPopup from "../components/SubmitStatusPopup.jsx";
 import { api } from "../lib/api.js";
 import { useAuth, logout } from "../lib/auth.jsx";
 import { getApprovedAmount, withNotificationAmounts } from "../lib/amount.js";
@@ -84,8 +85,14 @@ export default function StudentDashboard() {
     photographFile: null,
     declarationAccepted: false
   });
-  const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState("success");
+  const [submitPopup, setSubmitPopup] = useState({
+    open: false,
+    type: "success",
+    title: "",
+    message: ""
+  });
+  const [isSubmittingApplication, setIsSubmittingApplication] = useState(false);
+  const submittingApplicationRef = useRef(false);
   const [applicationsNotice, setApplicationsNotice] = useState("");
   const [applicationsNoticeType, setApplicationsNoticeType] = useState("success");
   const statusLabel = (status) => {
@@ -220,11 +227,26 @@ export default function StudentDashboard() {
 
   const toUpperText = (value) => String(value || "").toUpperCase();
   const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+  const closeSubmitPopup = () => setSubmitPopup((prev) => ({ ...prev, open: false }));
+  const showSubmitPopup = (type, popupMessage, title = "") => {
+    setSubmitPopup({
+      open: true,
+      type,
+      title,
+      message: popupMessage
+    });
+  };
+  const viewApplicationsFromPopup = () => {
+    closeSubmitPopup();
+    setActive("My Applications");
+  };
 
   const submit = async (e) => {
     e.preventDefault();
-    setMessage("");
-    setMessageType("error");
+    if (submittingApplicationRef.current) {
+      showSubmitPopup("error", "Application submission is in progress. Please wait.", "Please wait");
+      return;
+    }
     const fixedDepartment = toUpperText(user?.department || form.department);
     const fixedApplicantName = toUpperText(user?.name || form.applicantName);
     const fixedEmail = normalizeEmail(user?.email || form.email);
@@ -235,7 +257,7 @@ export default function StudentDashboard() {
       new Date(app.created_at).getTime() >= sixMonthsAgoMs
     )).length;
     if (recentStudentCount >= 2) {
-      setMessage("Only two student applications are allowed in six months.");
+      showSubmitPopup("error", "Only two student applications are allowed in six months.", "Submission blocked");
       return;
     }
     const oversizedFiles = [
@@ -246,7 +268,11 @@ export default function StudentDashboard() {
     ].filter((file) => file && file.size > MAX_FILE_BYTES);
     if (oversizedFiles.length > 0) {
       const fileNames = oversizedFiles.map((file) => file.name).join(", ");
-      setMessage(`File too large. Max ${MAX_FILE_LABEL} per file. Please compress: ${fileNames}`);
+      showSubmitPopup(
+        "error",
+        `File too large. Max ${MAX_FILE_LABEL} per file. Please compress: ${fileNames}`,
+        "Upload issue"
+      );
       return;
     }
     const data = new FormData();
@@ -278,6 +304,8 @@ export default function StudentDashboard() {
     if (form.bankPassbookFile) data.append("bank_passbook_file", form.bankPassbookFile);
     if (form.photographFile) data.append("photograph_file", form.photographFile);
     data.append("declaration_accepted", String(form.declarationAccepted));
+    submittingApplicationRef.current = true;
+    setIsSubmittingApplication(true);
     try {
       await api.submitStudent(data);
       setForm({
@@ -310,13 +338,18 @@ export default function StudentDashboard() {
         photographFile: null,
         declarationAccepted: false
       });
-      setMessageType("success");
-      setMessage("Application submitted.");
+      showSubmitPopup("success", "Your application has been submitted and sent for review.", "Application submitted");
       setApps(await api.myApplications({ limit: DASHBOARD_FETCH_LIMIT }));
     } catch (err) {
       const tooLarge = err?.status === 413 || /file too large/i.test(err?.message || "");
-      setMessageType("error");
-      setMessage(tooLarge ? `File too large. Max ${MAX_FILE_LABEL} per file.` : (err.message || "Failed to submit application."));
+      showSubmitPopup(
+        "error",
+        tooLarge ? `File too large. Max ${MAX_FILE_LABEL} per file.` : (err.message || "Failed to submit application."),
+        "Unable to submit"
+      );
+    } finally {
+      submittingApplicationRef.current = false;
+      setIsSubmittingApplication(false);
     }
   };
 
@@ -660,12 +693,13 @@ export default function StudentDashboard() {
 
                   <div className="mt-6 rounded-2xl border border-black/10 bg-white/90 p-3 backdrop-blur">
                     <div className="flex flex-wrap gap-3">
-                      <button className="btn btn-primary w-full sm:w-auto" type="submit" disabled={studentLimitReached}>
-                      {studentLimitReached ? "Limit Reached" : "Submit Application"}
+                      <button className="btn btn-primary w-full sm:w-auto" type="submit" disabled={studentLimitReached || isSubmittingApplication}>
+                        {studentLimitReached ? "Limit Reached" : (isSubmittingApplication ? "Submitting..." : "Submit Application")}
                       </button>
                       <button
                         className="btn btn-ghost w-full sm:w-auto"
                         type="button"
+                        disabled={isSubmittingApplication}
                         onClick={() => setForm({
                           department: user?.department || "",
                           applicantName: user?.name || "",
@@ -701,11 +735,6 @@ export default function StudentDashboard() {
                       </button>
                     </div>
                   </div>
-                  {message && (
-                    <p className={`text-sm ${messageType === "error" ? "text-rose-600" : "text-emerald-600"}`}>
-                      {message}
-                    </p>
-                  )}
                 </form>
               </div>
             </div>
@@ -958,6 +987,15 @@ export default function StudentDashboard() {
         </div>
       </div>
       </div>
+
+      <SubmitStatusPopup
+        open={submitPopup.open}
+        type={submitPopup.type}
+        title={submitPopup.title}
+        message={submitPopup.message}
+        onClose={closeSubmitPopup}
+        onViewApplications={submitPopup.type === "success" ? viewApplicationsFromPopup : undefined}
+      />
 
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 lg:hidden animate-fade">
