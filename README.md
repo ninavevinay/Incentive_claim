@@ -4,7 +4,7 @@ Private internal platform for students, faculty, authorities, and admins to subm
 
 ## Stack
 - Frontend: React + Vite + Tailwind CSS
-- Backend: FastAPI + SQLAlchemy + PostgreSQL
+- Backend: Django + Django REST Framework + PostgreSQL
 - Auth: Email OTP to `@sbjit.edu.in` addresses + JWT session token
 - File storage: local `backend/uploads`
 
@@ -59,16 +59,17 @@ DB_POOL_USE_LIFO=true
 DB_STATEMENT_TIMEOUT_MS=30000
 APP_QUERY_DEFAULT_LIMIT=100
 APP_QUERY_MAX_LIMIT=500
-RUN_STARTUP_LEGACY_REPAIR=true
+RUN_STARTUP_LEGACY_REPAIR=false
 ```
+Only set this to `true` if you specifically need the one-time legacy review repair at startup.
 
 Run backend:
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+python manage.py runserver 0.0.0.0:8000
 ```
-Production run example (Linux):
+Production run example:
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+gunicorn portal_backend.wsgi:application --bind 0.0.0.0:8000
 ```
 
 ### 3) Frontend
@@ -79,8 +80,9 @@ npm install
 
 Set frontend env if needed:
 ```env
-VITE_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8000/api
 ```
+If you leave it unset, the Vite dev server proxies `/api` and `/uploads` to Django.
 
 Run frontend:
 ```bash

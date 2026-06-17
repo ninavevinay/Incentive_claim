@@ -1,8 +1,6 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { api } from "../lib/api.js";
-
-const API_URL = import.meta.env.VITE_API_URL || "/api";
+import { api, resolveMediaUrl } from "../lib/api.js";
 
 const HERO_TITLE = "SBJIT NPTEL Reimburse";
 
@@ -81,7 +79,7 @@ const getNoticeHref = (noticePath) => {
     return path;
   }
 
-  return `${API_URL}${path}`;
+  return resolveMediaUrl(path);
 };
 
 export default function LandingPage() {
@@ -221,7 +219,7 @@ export default function LandingPage() {
             {HERO_SLIDES.map((slide, index) => (
               <button
                 type="button"
-                key={slide.title}
+                key={`${slide.image}-${index}`}
                 className={`tpl-dot ${
                   index === activeSlide
                     ? "is-active"

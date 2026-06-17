@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
-import { api } from "../lib/api.js";
+import { api, resolveMediaUrl } from "../lib/api.js";
 import { useAuth, logout } from "../lib/auth.jsx";
 import { getApprovedAmount, getInstitutionCoordinatorApprovedAmount } from "../lib/amount.js";
 import { drawPdfHeader, getPdfHeaderImageDataUrl } from "../lib/pdfHeader.js";
 import { DashboardSkeleton } from "../components/Skeleton.jsx";
 import { getStoredMenuSelection, setStoredMenuSelection } from "../lib/dashboardStorage.js";
-const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 const baseMenu = [
   "Overview",
@@ -1777,7 +1776,7 @@ export default function AuthorityDashboard() {
 
   const docLink = (path) => {
     if (!path) return "-";
-    const href = path.startsWith("http") ? path : `${API_URL}${path}`;
+    const href = path.startsWith("http") ? path : resolveMediaUrl(path);
     return (
       <a className="text-black underline" href={href} target="_blank" rel="noreferrer">
         View

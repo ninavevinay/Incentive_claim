@@ -1,8 +1,12 @@
+from __future__ import annotations
+
+import threading
 from collections.abc import Sequence
-from fastapi import BackgroundTasks
-from sqlalchemy.orm import Session
-from app.core.email import send_email
-from app.models.user import User
+
+from django.db import transaction
+
+from .emailer import send_email
+from .models import User
 
 
 def _truncate_notification_message(message: str, limit: int = 255) -> str:
@@ -19,12 +23,14 @@ def _build_email_body(recipient_name: str, headline: str, details: Sequence[str]
         if visible_details:
             lines.append("")
             lines.extend(f"- {detail}" for detail in visible_details)
-    lines.extend([
-        "",
-        "This is an automated notification from SBJIT NPTEL Reimburse. Please do not reply to this email.",
-        "For support, contact npteladmin.sbjit.edu.in.",
-        "SBJIT NPTEL Reimburse Team",
-    ])
+    lines.extend(
+        [
+            "",
+            "This is an automated notification from SBJIT NPTEL Reimburse. Please do not reply to this email.",
+            "For support, contact npteladmin.sbjit.edu.in.",
+            "SBJIT NPTEL Reimburse Team",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -38,11 +44,10 @@ def _send_email_safely(to_email: str, subject: str, text_body: str) -> None:
 
 
 def queue_portal_notification(
-    db: Session,
     recipient: User,
     message: str,
     *,
-    background_tasks: BackgroundTasks | None = None,
+    background_tasks: object | None = None,
     email_subject: str | None = None,
     email_headline: str | None = None,
     email_details: Sequence[str] | None = None,
@@ -50,19 +55,24 @@ def queue_portal_notification(
     email_recipient_name: str | None = None,
 ) -> None:
     # Dashboard notifications are intentionally disabled.
-    # Keep email delivery support below for flows that still require email.
+    # Keep email delivery support for flows that still require email.
 
-    if background_tasks is None or not email_subject:
+    if not email_subject:
         return
 
     target_email = str(email_to or recipient.email or "").strip().lower()
     if not target_email:
         return
     target_name = str(email_recipient_name or recipient.name or "").strip() or "Applicant"
+    body = _build_email_body(target_name, email_headline or message, email_details)
 
-    background_tasks.add_task(
-        _send_email_safely,
-        target_email,
-        email_subject,
-        _build_email_body(target_name, email_headline or message, email_details),
-    )
+    def _dispatch() -> None:
+        thread = threading.Thread(
+            target=_send_email_safely,
+            args=(target_email, email_subject, body),
+            daemon=True,
+        )
+        thread.start()
+
+    transaction.on_commit(_dispatch)
+

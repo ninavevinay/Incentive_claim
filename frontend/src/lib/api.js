@@ -1,4 +1,38 @@
-const API_URL = import.meta.env.VITE_API_URL || "/api";
+import {
+  buildPortalError,
+  dispatchPortalError,
+  getErrorMessage,
+  PortalError,
+  readResponsePayload,
+  shouldNotifyGlobalError
+} from "./errors.js";
+
+const DEFAULT_API_BASE = "/api";
+const RAW_API_URL = String(import.meta.env.VITE_API_URL || "").trim();
+
+const isAbsoluteUrl = (value) => /^https?:\/\//i.test(String(value || ""));
+
+const stripTrailingSlashes = (value) => String(value || "").trim().replace(/\/+$/, "");
+
+const normalizeApiBase = (value) => {
+  const raw = stripTrailingSlashes(value);
+  if (!raw) return DEFAULT_API_BASE;
+  if (raw.endsWith("/api")) return raw;
+  return `${raw}/api`;
+};
+
+const API_URL = normalizeApiBase(RAW_API_URL || DEFAULT_API_BASE);
+
+const API_ORIGIN = (() => {
+  if (isAbsoluteUrl(API_URL)) {
+    try {
+      return new URL(API_URL).origin;
+    } catch {
+      return typeof window !== "undefined" ? window.location.origin : "";
+    }
+  }
+  return typeof window !== "undefined" ? window.location.origin : "";
+})();
 const TOKEN_KEY = "token";
 
 function getStorage() {
@@ -20,30 +54,52 @@ export function clearToken() {
   storage.removeItem(TOKEN_KEY);
 }
 
+export function resolveMediaUrl(path) {
+  const value = String(path || "").trim();
+  if (!value) return "";
+  if (isAbsoluteUrl(value)) return value;
+  if (!API_ORIGIN) return value;
+  return value.startsWith("/") ? `${API_ORIGIN}${value}` : `${API_ORIGIN}/${value}`;
+}
+
 async function request(path, options = {}) {
+  const { skipAuth = false, notifyOnError, ...requestOptions } = options;
   const token = getToken();
-  const isFormData = options.body instanceof FormData;
+  const method = String(requestOptions.method || "GET").toUpperCase();
+  const isFormData = requestOptions.body instanceof FormData;
   const headers = {
     ...(isFormData ? {} : { "Content-Type": "application/json" }),
-    ...(options.headers || {})
+    ...(requestOptions.headers || {})
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (!skipAuth && token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    let message = data.detail || "Request failed";
-    if (Array.isArray(data.detail)) {
-      message = data.detail.map((item) => item.msg || "Invalid input").join(", ");
+  let res;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...requestOptions,
+      headers
+    });
+  } catch (error) {
+    const networkError = new PortalError(
+      getErrorMessage(error, "Unable to reach the server. Please check your connection and try again."),
+      { status: 0, method, path }
+    );
+    if (notifyOnError ?? shouldNotifyGlobalError(method, 0)) {
+      dispatchPortalError(networkError, { method, path, fallback: "Unable to reach the server. Please check your connection and try again." });
     }
-    const error = new Error(message);
-    error.status = res.status;
+    throw networkError;
+  }
+  if (!res.ok) {
+    const data = await readResponsePayload(res).catch(() => null);
+    const error = buildPortalError(res, data);
+    if (notifyOnError ?? shouldNotifyGlobalError(method, res.status)) {
+      dispatchPortalError(error, { method, path });
+    }
     throw error;
   }
-  return res.json();
+
+  const data = await readResponsePayload(res);
+  return data;
 }
 
 function toQueryString(params = {}) {
@@ -100,9 +156,9 @@ export const api = {
   submitFeedback: (payload) => request("/feedback/", { method: "POST", body: JSON.stringify(payload) }),
   myFeedback: (params = {}) => request(`/feedback/mine${toQueryString(params)}`),
   feedbackReport: (params = {}) => request(`/feedback/report${toQueryString(params)}`),
-  publicNotices: () => request("/notices/public"),
+  publicNotices: () => request("/notices/public", { skipAuth: true }),
   publicApprovedHighlights: (params = {}) =>
-    request(`/applications/public-approved-highlights${toQueryString(params)}`),
+    request(`/applications/public-approved-highlights${toQueryString(params)}`, { skipAuth: true }),
   createNotice: (payload) => request("/notices/", { method: "POST", body: payload }),
   adminUsers: (params = {}) => request(`/admin/users${toQueryString(params)}`),
   adminApplications: (params = {}) => request(`/admin/applications${toQueryString(params)}`),

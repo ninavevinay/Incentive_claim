@@ -1,36 +1,11 @@
 import { getApprovedAmount } from "./amount.js";
+import { resolveMediaUrl } from "./api.js";
 import { drawPdfHeader, getPdfHeaderImageDataUrl } from "./pdfHeader.js";
 
 const HEADER_COLOR = [31, 41, 55];
 const BORDER_COLOR = [209, 213, 219];
 const STRIPE_COLOR = [249, 250, 251];
 const TEXT_COLOR = [17, 24, 39];
-const API_URL = import.meta.env.VITE_API_URL || "/api";
-
-const isAbsoluteUrl = (value) => /^https?:\/\//i.test(String(value || ""));
-
-const getApiOrigin = () => {
-  if (typeof window === "undefined") return "";
-  if (isAbsoluteUrl(API_URL)) {
-    try {
-      return new URL(API_URL).origin;
-    } catch {
-      return window.location.origin;
-    }
-  }
-  return window.location.origin;
-};
-
-const resolveUploadUrl = (value) => {
-  const path = String(value ?? "").trim();
-  if (!path) return "";
-  if (isAbsoluteUrl(path)) return path;
-  const origin = getApiOrigin();
-  if (!origin) return path;
-  if (path.startsWith("/")) return `${origin}${path}`;
-  return `${origin}/${path}`;
-};
-
 const blobToDataUrl = (blob) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -43,7 +18,7 @@ const loadSignatureImage = async (signatureFilePath) => {
   const path = String(signatureFilePath ?? "").trim();
   if (!path) return null;
 
-  const signatureUrl = resolveUploadUrl(path);
+  const signatureUrl = resolveMediaUrl(path);
   if (!signatureUrl) return null;
 
   try {

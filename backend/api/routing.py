@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 
 
@@ -31,3 +33,4 @@ def dashboard_path_for_user(role: str, department: str | None) -> str:
             else "/authority/department-hod"
         )
     return "/login"
+
