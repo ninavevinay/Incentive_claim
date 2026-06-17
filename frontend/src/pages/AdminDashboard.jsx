@@ -621,7 +621,6 @@ export default function AdminDashboard() {
             Logout
           </button>
         </div>
-        <Topbar title="Administrative Panel" subtitle="System-wide visibility for users and applications" />
         {error && <div className="mt-4 text-sm text-rose-600">{error}</div>}
 
         <section className="mt-8">
@@ -680,12 +679,6 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          <div className="panel p-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-black/40">Password Login Access</div>
-            <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-4 text-sm text-black/70">
-              New users verify their email once with OTP during registration, then log in later using their saved password and verified <span className="font-semibold text-black">@sbjit.edu.in</span> email.
-            </div>
-          </div>
 
           {activeSection === "Registered Users" && (
           <div className="mt-6 panel p-4">
