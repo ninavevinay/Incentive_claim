@@ -28,32 +28,26 @@ export default function AppFooter({ useElearningFooter = false }) {
 
   if (!useElearningFooter) {
     return (
-      <footer className="mt-auto glass app-chrome border-t border-[color:var(--border-subtle)] py-[20px]">
+      <footer className="mt-auto tpl-dashboard-footer app-chrome">
         <div className="app-container">
-          <div className="flex flex-col items-center justify-between gap-4 text-center sm:flex-row sm:text-left">
+          <div className="flex flex-col items-center justify-between gap-3 text-center sm:flex-row sm:text-left">
             <div className="flex items-center gap-3">
               <img
                 src="/logo.jpg"
                 alt="SB Jain"
-                className="h-8 w-8 rounded-xl border border-[color:var(--border-subtle)] bg-white object-contain shadow-sm sm:h-9 sm:w-9"
+                className="h-8 w-8 rounded-lg border border-slate-200 bg-white object-contain p-0.5"
               />
               <div>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-[color:var(--primary)] sm:text-[11px]">
-                  SBJIT NPTEL Reimburse
-                </div>
-                <div className="text-[9px] text-black/35 sm:text-[10px]">
-                  Version 1.0
-                </div>
+                <div className="text-xs font-semibold text-slate-700">SBJIT NPTEL Reimburse</div>
+                <div className="text-[10px] text-slate-400">Enterprise Portal v1.0</div>
               </div>
             </div>
-            <div className="text-center text-[10px] uppercase tracking-wider text-black/45 sm:text-[11px]">
+            <div className="text-xs text-slate-500">
               Developed by{" "}
-              <span className="font-bold text-[color:var(--primary)] transition-colors hover:text-[color:var(--primary-deep)]">
-                Vinay Ninave
-              </span>
+              <span className="font-semibold text-[color:var(--primary)]">Vinay Ninave</span>
             </div>
-            <div className="text-[10px] text-black/35 sm:text-[11px]">
-              &copy; {new Date().getFullYear()} All rights reserved
+            <div className="text-[11px] text-slate-400">
+              &copy; {new Date().getFullYear()} S.B. Jain Institute. All rights reserved.
             </div>
           </div>
         </div>

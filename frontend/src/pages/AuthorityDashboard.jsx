@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar.jsx";
+import DashboardMobileSidebar from "../components/DashboardMobileSidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
+import DangerConfirmPopup from "../components/DangerConfirmPopup.jsx";
 import { api, resolveMediaUrl } from "../lib/api.js";
 import { useAuth, logout } from "../lib/auth.jsx";
 import { getApprovedAmount, getInstitutionCoordinatorApprovedAmount } from "../lib/amount.js";
@@ -198,16 +200,15 @@ export default function AuthorityDashboard() {
   const [departmentDraft, setDepartmentDraft] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState("");
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [rejectRemarks, setRejectRemarks] = useState({});
   const [approveAmounts, setApproveAmounts] = useState({});
   const [reportChartType, setReportChartType] = useState("pie");
-  const [reportGraphView, setReportGraphView] = useState("all_applications");
-  const [allGraphsIndex, setAllGraphsIndex] = useState(0);
-  const [reportSectionTab, setReportSectionTab] = useState("dashboard");
   const [reportYearFilter, setReportYearFilter] = useState("all");
   const [reportApprovedYearFilter, setReportApprovedYearFilter] = useState("all");
   const [reportApprovedYearTypeFilter, setReportApprovedYearTypeFilter] = useState("all");
   const [reportApprovedDepartmentFilter, setReportApprovedDepartmentFilter] = useState("all");
+  const [reportStudentSearch, setReportStudentSearch] = useState("");
   const [reportStudentYearFilter, setReportStudentYearFilter] = useState("all");
   const [reportStudentCategoryFilter, setReportStudentCategoryFilter] = useState("all");
   const [totalStatusFilter, setTotalStatusFilter] = useState("all");
@@ -537,10 +538,6 @@ export default function AuthorityDashboard() {
     };
   });
   const reportDateTag = new Date().toISOString().slice(0, 10);
-  const boundedAllGraphsIndex = Math.min(Math.max(allGraphsIndex, 0), REPORT_GRAPH_SEQUENCE.length - 1);
-  const allGraphsCurrentKey = REPORT_GRAPH_SEQUENCE[boundedAllGraphsIndex];
-  const activeGraphKeyForExport = reportGraphView === "all_graphs" ? allGraphsCurrentKey : reportGraphView;
-  const reportGraphLabel = REPORT_GRAPH_OPTIONS.find((option) => option.value === activeGraphKeyForExport)?.label || "Graph";
   const formatRs = (value) => Number(value || 0).toFixed(2);
   const currentYear = new Date().getFullYear();
   const lastYear = currentYear - 1;
@@ -620,9 +617,11 @@ export default function AuthorityDashboard() {
   const studentCategoryOptions = Array.from(new Set(studentReportRows.map((row) => row.courseCategory)))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
   const filteredStudentRows = studentReportRows.filter((row) => {
+    const search = reportStudentSearch.trim().toLowerCase();
+    const namePass = !search || row.applicant.toLowerCase().includes(search);
     const yearPass = reportStudentYearFilter === "all" || row.academicYear === reportStudentYearFilter;
     const categoryPass = reportStudentCategoryFilter === "all" || row.courseCategory === reportStudentCategoryFilter;
-    return yearPass && categoryPass;
+    return namePass && yearPass && categoryPass;
   });
   const filteredStudentApprovedAmount = filteredStudentRows.reduce((sum, row) => sum + Number(row.approvedAmount || 0), 0);
   const yearWiseLineData = yearWiseSummaryFromStart.map((item) => ({
@@ -1124,16 +1123,63 @@ export default function AuthorityDashboard() {
     return rendered;
   };
 
+  const fitCanvasWithinBox = (sourceWidth, sourceHeight, maxWidth, maxHeight) => {
+    const scale = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight);
+    return {
+      width: sourceWidth * scale,
+      height: sourceHeight * scale
+    };
+  };
+
+  const drawGraphCollagePage = (doc, graphCards, options = {}) => {
+    const {
+      margin = 24,
+      columns = 3,
+      gap = 12,
+      title = "",
+      subtitle = "",
+      metadataLines = [],
+      headerImageDataUrl = null
+    } = options;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const contentTop = drawPdfHeader(doc, {
+      margin,
+      title,
+      subtitle,
+      metadataLines,
+      headerImageDataUrl
+    });
+    const rows = Math.max(1, Math.ceil(graphCards.length / columns));
+    const availableWidth = pageWidth - (margin * 2);
+    const availableHeight = pageHeight - contentTop - margin;
+    const cellWidth = (availableWidth - (gap * (columns - 1))) / columns;
+    const cellHeight = (availableHeight - (gap * (rows - 1))) / rows;
+
+    graphCards.forEach((item, index) => {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      const cellLeft = margin + (column * (cellWidth + gap));
+      const cellTop = contentTop + (row * (cellHeight + gap));
+      const fit = fitCanvasWithinBox(item.canvas.width, item.canvas.height, cellWidth, cellHeight);
+      const drawLeft = cellLeft + ((cellWidth - fit.width) / 2);
+      const drawTop = cellTop + ((cellHeight - fit.height) / 2);
+      doc.addImage(item.canvas.toDataURL("image/png"), "PNG", drawLeft, drawTop, fit.width, fit.height, undefined, "FAST");
+    });
+
+    return contentTop;
+  };
+
   const exportGraphImage = async () => {
     try {
       const canvas = await captureGraphCanvas();
       const link = document.createElement("a");
       link.href = canvas.toDataURL("image/png");
-      link.download = `graph-report-${activeGraphKeyForExport}-${reportDateTag}.png`;
+      link.download = `graph-report-all-${reportDateTag}.png`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      setReportNotice(`Graph image exported: ${reportGraphLabel}`);
+      setReportNotice("All graphs image exported.");
     } catch (err) {
       setReportNotice(err?.message || "Failed to export graph image.");
     }
@@ -1144,40 +1190,25 @@ export default function AuthorityDashboard() {
       const graphCards = await captureAllGraphCards();
       const { default: jsPDF } = await import("jspdf");
       const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-      const margin = 24;
+      const margin = 20;
       const generatedAt = new Date().toLocaleString();
       const headerImageDataUrl = await getPdfHeaderImageDataUrl().catch(() => null);
-      const boxWidth = pageWidth - (margin * 2);
+      drawGraphCollagePage(doc, graphCards, {
+        margin,
+        columns: 3,
+        gap: 10,
+        title: "Institution Coordinator Graph Report",
+        subtitle: "S. B. Jain Institute of Technology, Management & Research, Nagpur",
+        metadataLines: [
+          `Generated: ${generatedAt}`,
+          `Graphs included: ${graphCards.length}`,
+          "Portrait A4 layout."
+        ],
+        headerImageDataUrl
+      });
 
-      for (let index = 0; index < graphCards.length; index += 1) {
-        const item = graphCards[index];
-        if (index > 0) doc.addPage();
-        const contentTop = drawPdfHeader(doc, {
-          margin,
-          title: "Institution Coordinator Graph Report",
-          subtitle: "S. B. Jain Institute of Technology, Management & Research, Nagpur",
-          metadataLines: [
-            `Generated: ${generatedAt}`,
-            `Graph ${index + 1} of ${graphCards.length}: ${item.title}`
-          ],
-          headerImageDataUrl
-        });
-        const boxHeight = pageHeight - contentTop - margin;
-        const imgData = item.canvas.toDataURL("image/png");
-        let drawWidth = boxWidth;
-        let drawHeight = (item.canvas.height * drawWidth) / item.canvas.width;
-        if (drawHeight > boxHeight) {
-          drawHeight = boxHeight;
-          drawWidth = (item.canvas.width * drawHeight) / item.canvas.height;
-        }
-        const offsetX = margin + ((boxWidth - drawWidth) / 2);
-        doc.addImage(imgData, "PNG", offsetX, contentTop, drawWidth, drawHeight);
-      }
-
-      doc.save(`graph-report-all-graphs-${reportDateTag}.pdf`);
-      setReportNotice("Graph PDF exported with all graphs in a single file.");
+      doc.save(`graph-report-all-graphs-a4-${reportDateTag}.pdf`);
+      setReportNotice("Graph PDF exported on A4 portrait.");
     } catch (err) {
       setReportNotice(err?.message || "Failed to export graph PDF.");
     }
@@ -1318,40 +1349,26 @@ export default function AuthorityDashboard() {
       const { default: jsPDF } = await import("jspdf");
       const autoTableModule = await import("jspdf-autotable");
       const autoTable = autoTableModule.default || autoTableModule.autoTable;
-      const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+      const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a3" });
       const margin = 32;
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       const generatedAt = new Date().toLocaleString();
       const graphCards = await captureAllGraphCards();
-      const graphBoxWidth = pageWidth - (margin * 2);
       const headerImageDataUrl = await getPdfHeaderImageDataUrl().catch(() => null);
-
-      for (let index = 0; index < graphCards.length; index += 1) {
-        const item = graphCards[index];
-        if (index > 0) doc.addPage();
-        const graphTop = drawPdfHeader(doc, {
-          margin,
-          title: "Institution Coordinator Report",
-          subtitle: "S. B. Jain Institute of Technology, Management & Research, Nagpur",
-          metadataLines: [
-            `Generated: ${generatedAt}`,
-            `Total Applications: ${reportRows.length} | Approved Total (Rs): ${formatRs(reportApprovedTotalAmount)}`,
-            `Graph ${index + 1} of ${graphCards.length}: ${item.title}`
-          ],
-          headerImageDataUrl
-        });
-        const graphBoxHeight = pageHeight - graphTop - margin;
-        const imgData = item.canvas.toDataURL("image/png");
-        let drawWidth = graphBoxWidth;
-        let drawHeight = (item.canvas.height * drawWidth) / item.canvas.width;
-        if (drawHeight > graphBoxHeight) {
-          drawHeight = graphBoxHeight;
-          drawWidth = (item.canvas.width * drawHeight) / item.canvas.height;
-        }
-        const offsetX = margin + ((graphBoxWidth - drawWidth) / 2);
-        doc.addImage(imgData, "PNG", offsetX, graphTop, drawWidth, drawHeight);
-      }
+      drawGraphCollagePage(doc, graphCards, {
+        margin,
+        columns: 3,
+        gap: 12,
+        title: "Institution Coordinator Report",
+        subtitle: "S. B. Jain Institute of Technology, Management & Research, Nagpur",
+        metadataLines: [
+          `Generated: ${generatedAt}`,
+          `Total Applications: ${reportRows.length} | Approved Total (Rs): ${formatRs(reportApprovedTotalAmount)}`,
+          "All graphs are arranged on one page."
+        ],
+        headerImageDataUrl
+      });
 
       doc.addPage();
       const tableStartY = drawPdfHeader(doc, {
@@ -1409,7 +1426,7 @@ export default function AuthorityDashboard() {
         }
       });
       doc.save(`institution-report-${reportDateTag}.pdf`);
-      setReportNotice("PDF exported with all graphs and report table.");
+      setReportNotice("PDF exported with all graphs on one page and the report table.");
     } catch (err) {
       setReportNotice(err?.message || "Failed to export PDF.");
     }
@@ -1657,12 +1674,22 @@ export default function AuthorityDashboard() {
     setEditingDepartment(false);
   };
 
+  const openDeleteAccountPopup = () => {
+    setDeleteMessage("");
+    setDeleteAccountOpen(true);
+  };
+
+  const closeDeleteAccountPopup = () => {
+    if (deletingAccount) return;
+    setDeleteAccountOpen(false);
+  };
+
   const deleteAccount = async () => {
-    if (!window.confirm("Deactivate your account? You can contact admin to reactivate later.")) return;
     setDeleteMessage("");
     setDeletingAccount(true);
     try {
       await api.deleteMe();
+      setDeleteAccountOpen(false);
       logout(setUser);
     } catch (err) {
       setDeleteMessage(err.message || "Unable to delete account right now.");
@@ -1798,7 +1825,7 @@ export default function AuthorityDashboard() {
           <div className="dashboard-sidebar">
             <Sidebar items={menu} active={active} onSelect={handleSelect} user={user} />
           </div>
-          <div className="card dashboard-content animate-slide-up">
+          <div className="dashboard-content animate-slide-up">
           <Topbar title="Authority Portal" subtitle={`Welcome, ${user?.name || "Authority"}`} />
 
           {loading ? (
@@ -2163,233 +2190,206 @@ export default function AuthorityDashboard() {
                 <div className="flex flex-wrap items-center gap-2">
                   <button className="btn btn-ghost" type="button" onClick={refresh}>Refresh</button>
                   <button className="btn btn-ghost" type="button" onClick={exportReportPdf}>Export PDF</button>
+                  <button className="btn btn-ghost" type="button" onClick={exportGraphPdf}>Graph PDF (A4)</button>
                 </div>
               </div>
 
               <div className="mt-4 panel p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    className={`btn ${reportSectionTab === "dashboard" ? "btn-primary" : "btn-ghost"}`}
-                    type="button"
-                    onClick={() => setReportSectionTab("dashboard")}
-                  >
-                    Dashboard
-                  </button>
-                  <button
-                    className={`btn ${reportSectionTab === "year_wise" ? "btn-primary" : "btn-ghost"}`}
-                    type="button"
-                    onClick={() => setReportSectionTab("year_wise")}
-                  >
-                    Year Wise Application Details
-                  </button>
-                  <button
-                    className={`btn ${reportSectionTab === "student_section" ? "btn-primary" : "btn-ghost"}`}
-                    type="button"
-                    onClick={() => setReportSectionTab("student_section")}
-                  >
-                    Student Section
-                  </button>
-                </div>
-
-                <div className="mt-2 text-xs text-black/50">
-                  Real-time data from your database. Auto-refresh updates every 5 seconds.
+                <div className="text-xs text-[color:var(--ink-soft)]">
+                  All graphs and reports on one page. Auto-refresh updates every 5 seconds.
                 </div>
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-xl border border-black/10 bg-white/85 p-3 text-sm">
-                    <div className="text-xs uppercase tracking-[0.2em] text-black/40">Total Applications</div>
-                    <div className="mt-2 text-xl font-semibold">{reportTotalCount}</div>
+                  <div className="stat-card p-3 text-sm">
+                    <div className="stat-card-label">Total Applications</div>
+                    <div className="stat-card-value text-xl">{reportTotalCount}</div>
                   </div>
-                  <div className="rounded-xl border border-black/10 bg-white/85 p-3 text-sm">
-                    <div className="text-xs uppercase tracking-[0.2em] text-black/40">Pending</div>
-                    <div className="mt-2 text-xl font-semibold">{reportPendingCount}</div>
+                  <div className="stat-card p-3 text-sm">
+                    <div className="stat-card-label">Pending</div>
+                    <div className="stat-card-value text-xl">{reportPendingCount}</div>
                   </div>
-                  <div className="rounded-xl border border-black/10 bg-white/85 p-3 text-sm">
-                    <div className="text-xs uppercase tracking-[0.2em] text-black/40">Approved</div>
-                    <div className="mt-2 text-xl font-semibold">{reportApprovedApps.length}</div>
+                  <div className="stat-card p-3 text-sm">
+                    <div className="stat-card-label">Approved</div>
+                    <div className="stat-card-value text-xl">{reportApprovedApps.length}</div>
                   </div>
-                  <div className="rounded-xl border border-black/10 bg-white/85 p-3 text-sm">
-                    <div className="text-xs uppercase tracking-[0.2em] text-black/40">Approved Total (Rs)</div>
-                    <div className="mt-2 text-xl font-semibold">{formatRs(reportApprovedTotalAmount)}</div>
+                  <div className="stat-card p-3 text-sm">
+                    <div className="stat-card-label">Approved Total (Rs)</div>
+                    <div className="stat-card-value text-xl">{formatRs(reportApprovedTotalAmount)}</div>
                   </div>
                 </div>
 
-                {reportSectionTab === "dashboard" && (
-                  <div ref={graphContainerRef} className="mt-4 space-y-4">
-                    <div className="grid min-w-0 gap-4 xl:grid-cols-2">
-                      {renderPieCard("Application Status Pie Graph", reportBreakdown, statusPieSegments, reportTotalCount)}
-                      {renderPieCard(
-                        "Academic Year and Academic Year Type Wise Pie Graph",
-                        academicYearData,
-                        academicYearSegments,
-                        academicYearTotal
-                      )}
-                      {renderPieCard(
-                        "Department Wise Applications Pie Graph",
-                        departmentWiseData,
-                        departmentWiseSegments,
-                        departmentWiseTotal,
-                        "No department applications."
-                      )}
-                      {renderPieCard(
-                        "Faculty vs Student Applications Pie Graph",
-                        applicationTypeData,
-                        applicationTypeSegments,
-                        applicationTypeTotal,
-                        "No application type data."
-                      )}
-                      {renderPieCard("Category Wise Pie Graph", categoryWiseData, categoryWiseSegments, categoryWiseTotal)}
-                      {renderPieCard("Feedback Rating Pie Graph", feedbackData, feedbackSegments, feedbackTotal, "No feedback submissions yet.")}
-                      {renderPieCard(`Last Year (${lastYear}) Pie Graph`, lastYearStatusData, lastYearSegments, lastYearTotal, `No applications in ${lastYear}`)}
+                <div ref={graphContainerRef} className="mt-6 space-y-6">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
+                        Academic Year Filter
+                      </label>
+                      <select className="input" value={reportYearFilter} onChange={(e) => setReportYearFilter(e.target.value)}>
+                        <option value="all">All Academic Years</option>
+                        {yearWiseDropdownOptions.map((item) => (
+                          <option key={item.year} value={item.year}>{item.year}</option>
+                        ))}
+                      </select>
                     </div>
-                    {renderMonthlyTrendCard()}
                   </div>
-                )}
 
-                {reportSectionTab === "year_wise" && (
-                  <div className="mt-4 space-y-4">
-                    <div className="flex flex-wrap items-end gap-3">
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year</label>
-                        <select className="input mt-2" value={reportYearFilter} onChange={(e) => setReportYearFilter(e.target.value)}>
-                          <option value="all">All Academic Years</option>
-                          {yearWiseDropdownOptions.map((item) => (
-                            <option key={item.year} value={item.year}>{item.year}</option>
-                          ))}
-                        </select>
+                  <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+                    {renderPieCard("Application Status Pie Graph", reportBreakdown, statusPieSegments, reportTotalCount)}
+                    {renderPieCard(
+                      "Academic Year and Academic Year Type Wise Pie Graph",
+                      academicYearData,
+                      academicYearSegments,
+                      academicYearTotal
+                    )}
+                    {renderPieCard(
+                      "Department Wise Applications Pie Graph",
+                      departmentWiseData,
+                      departmentWiseSegments,
+                      departmentWiseTotal,
+                      "No department applications."
+                    )}
+                    {renderPieCard(
+                      "Faculty vs Student Applications Pie Graph",
+                      applicationTypeData,
+                      applicationTypeSegments,
+                      applicationTypeTotal,
+                      "No application type data."
+                    )}
+                    {renderPieCard("Category Wise Pie Graph", categoryWiseData, categoryWiseSegments, categoryWiseTotal)}
+                    {renderPieCard("Feedback Rating Pie Graph", feedbackData, feedbackSegments, feedbackTotal, "No feedback submissions yet.")}
+                    {renderPieCard(`Last Year (${lastYear}) Pie Graph`, lastYearStatusData, lastYearSegments, lastYearTotal, `No applications in ${lastYear}`)}
+                    {renderPieCard(`${selectedYearLabel} Status Pie Graph`, selectedYearStatusData, selectedYearStatusSegments, selectedYearStatusTotal)}
+                  </div>
+
+                  {renderMonthlyTrendCard()}
+                  {renderYearWiseLineCard()}
+
+                  <div className="overflow-x-auto">
+                    <h3 className="mb-3 text-sm font-semibold text-[color:var(--ink)]">Year Wise Application Summary</h3>
+                    <table className="data-table min-w-[860px]">
+                      <thead>
+                        <tr>
+                          <th>Academic Year</th>
+                          <th>Total</th>
+                          <th>Pending</th>
+                          <th>Approved</th>
+                          <th>Rejected</th>
+                          <th>Approved Rs</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {yearWiseSummary.map((row) => (
+                          <tr key={row.year}>
+                            <td className="font-medium">{row.year}</td>
+                            <td>{row.total}</td>
+                            <td>{row.pending}</td>
+                            <td>{row.approved}</td>
+                            <td>{row.rejected}</td>
+                            <td>{formatRs(row.approvedAmount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {yearWiseSummary.length === 0 && (
+                      <div className="mt-3 text-sm text-[color:var(--ink-soft)]">No academic year records available.</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-8 grid min-h-0 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+                  <aside className="panel space-y-4 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">Approved Student Search</div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
+                        Search by Name
+                      </label>
+                      <input
+                        className="input"
+                        placeholder="Student name"
+                        value={reportStudentSearch}
+                        onChange={(e) => setReportStudentSearch(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
+                        Academic Year
+                      </label>
+                      <select
+                        className="input"
+                        value={reportStudentYearFilter}
+                        onChange={(e) => setReportStudentYearFilter(e.target.value)}
+                      >
+                        <option value="all">All Academic Years</option>
+                        {studentYearOptions.map((year) => (
+                          <option key={year} value={year}>{year}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
+                        Category
+                      </label>
+                      <select
+                        className="input"
+                        value={reportStudentCategoryFilter}
+                        onChange={(e) => setReportStudentCategoryFilter(e.target.value)}
+                      >
+                        <option value="all">All Categories</option>
+                        {studentCategoryOptions.map((category) => (
+                          <option key={category} value={category}>{category}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--paper-strong)] px-3 py-2">
+                        <span className="text-[color:var(--ink-soft)]">Total Approved:</span> {studentReportRows.length}
+                      </div>
+                      <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--paper-strong)] px-3 py-2">
+                        <span className="text-[color:var(--ink-soft)]">Filtered:</span> {filteredStudentRows.length}
+                      </div>
+                      <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--paper-strong)] px-3 py-2">
+                        <span className="text-[color:var(--ink-soft)]">Approved Total (Rs):</span> {formatRs(filteredStudentApprovedAmount)}
                       </div>
                     </div>
+                    <button className="btn btn-ghost w-full" type="button" onClick={exportStudentSectionExcel}>
+                      Export Excel
+                    </button>
+                  </aside>
 
-                    <div className="grid min-w-0 gap-4 xl:grid-cols-2">
-                      {renderPieCard(`${selectedYearLabel} Status Pie Graph`, selectedYearStatusData, selectedYearStatusSegments, selectedYearStatusTotal)}
-                      {renderBarCard(`${selectedYearLabel} Status Bar Graph`, selectedYearStatusData, selectedYearStatusTotal)}
-                    </div>
-
-                    <div className="grid min-w-0 gap-4">
-                      {renderYearWiseLineCard()}
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[860px] text-left text-sm">
+                  <div className="panel p-4">
+                    <h3 className="text-sm font-semibold text-[color:var(--ink)]">Approved Students</h3>
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="data-table min-w-[720px]">
                         <thead>
-                          <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
-                            <th className="py-2 pr-4">Academic Year</th>
-                            <th className="py-2 pr-4">Total</th>
-                            <th className="py-2 pr-4">Pending</th>
-                            <th className="py-2 pr-4">Approved</th>
-                            <th className="py-2 pr-4">Rejected</th>
-                            <th className="py-2 pr-4">Approved Rs</th>
+                          <tr>
+                            <th>Name</th>
+                            <th>Academic Year</th>
+                            <th>Department</th>
+                            <th>Category</th>
+                            <th>Approved Amt (Rs)</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-black/10">
-                          {yearWiseSummary.map((row) => (
-                            <tr key={row.year}>
-                              <td className="py-3 pr-4 font-medium">{row.year}</td>
-                              <td className="py-3 pr-4">{row.total}</td>
-                              <td className="py-3 pr-4">{row.pending}</td>
-                              <td className="py-3 pr-4">{row.approved}</td>
-                              <td className="py-3 pr-4">{row.rejected}</td>
-                              <td className="py-3 pr-4">{formatRs(row.approvedAmount)}</td>
+                        <tbody>
+                          {filteredStudentRows.map((row) => (
+                            <tr key={row.id}>
+                              <td className="font-medium">{row.applicant}</td>
+                              <td>{row.academicYear}</td>
+                              <td>{row.department}</td>
+                              <td>{row.courseCategory}</td>
+                              <td>{formatRs(row.approvedAmount)}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                      {yearWiseSummary.length === 0 && (
-                        <div className="mt-3 text-sm text-black/50">No academic year records available.</div>
+                      {filteredStudentRows.length === 0 && (
+                        <div className="mt-3 text-sm text-[color:var(--ink-soft)]">No approved student applications found.</div>
                       )}
                     </div>
                   </div>
-                )}
-
-                {reportSectionTab === "student_section" && (
-                  <div className="mt-4 grid min-h-0 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
-                    <aside className="rounded-2xl border border-black/10 bg-white/75 p-4 space-y-4">
-                      <div className="text-xs uppercase tracking-[0.2em] text-black/40">Student Sidebar</div>
-                      <div className="space-y-2">
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year</label>
-                        <select
-                          className="input"
-                          value={reportStudentYearFilter}
-                          onChange={(e) => setReportStudentYearFilter(e.target.value)}
-                        >
-                          <option value="all">All Academic Years</option>
-                          {studentYearOptions.map((year) => (
-                            <option key={year} value={year}>{year}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Category</label>
-                        <select
-                          className="input"
-                          value={reportStudentCategoryFilter}
-                          onChange={(e) => setReportStudentCategoryFilter(e.target.value)}
-                        >
-                          <option value="all">All Categories</option>
-                          {studentCategoryOptions.map((category) => (
-                            <option key={category} value={category}>{category}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="rounded-xl border border-black/10 bg-white/85 px-3 py-2 text-sm">
-                          <span className="text-black/50">Approved Student Applications:</span> {studentReportRows.length}
-                        </div>
-                        <div className="rounded-xl border border-black/10 bg-white/85 px-3 py-2 text-sm">
-                          <span className="text-black/50">Filtered Rows:</span> {filteredStudentRows.length}
-                        </div>
-                        <div className="rounded-xl border border-black/10 bg-white/85 px-3 py-2 text-sm">
-                          <span className="text-black/50">Approved Total (Rs):</span> {formatRs(filteredStudentApprovedAmount)}
-                        </div>
-                      </div>
-                      <button className="btn btn-ghost w-full" type="button" onClick={exportStudentSectionExcel}>
-                        Export Excel
-                      </button>
-                    </aside>
-
-                    <div className="rounded-2xl border border-black/10 bg-white/75 p-4">
-                      <div className="text-xs uppercase tracking-[0.2em] text-black/40">Student Data Table</div>
-                      <div className="mt-3 overflow-x-auto">
-                        <table className="w-full min-w-[920px] text-left text-sm">
-                          <thead>
-                            <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
-                              <th className="py-2 pr-4">ID</th>
-                              <th className="py-2 pr-4">Applicant</th>
-                              <th className="py-2 pr-4">Department</th>
-                              <th className="py-2 pr-4">Academic Year</th>
-                              <th className="py-2 pr-4">Category</th>
-                              <th className="py-2 pr-4">NPTEL Application Number</th>
-                              <th className="py-2 pr-4">Score</th>
-                              <th className="py-2 pr-4">Approved Rs</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-black/10">
-                            {filteredStudentRows.map((row) => (
-                              <tr key={row.id}>
-                                <td className="py-3 pr-4">{row.id}</td>
-                                <td className="py-3 pr-4 font-medium">{row.applicant}</td>
-                                <td className="py-3 pr-4">{row.department}</td>
-                                <td className="py-3 pr-4">{row.academicYear}</td>
-                                <td className="py-3 pr-4">{row.courseCategory}</td>
-                                <td className="py-3 pr-4">{row.nptelApplicationNumber}</td>
-                                <td className="py-3 pr-4">{row.score}</td>
-                                <td className="py-3 pr-4">{formatRs(row.approvedAmount)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        {filteredStudentRows.length === 0 && (
-                          <div className="mt-3 text-sm text-black/50">No student applications found for selected filters.</div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
+                </div>
 
                 {reportNotice && (
-                  <div className="mt-4 rounded-xl border border-black/10 bg-white/80 px-3 py-2 text-xs text-black/70">
-                    {reportNotice}
-                  </div>
+                  <div className="mt-4 alert-info">{reportNotice}</div>
                 )}
               </div>
 
@@ -2795,7 +2795,7 @@ export default function AuthorityDashboard() {
                 <button
                   className="btn btn-primary bg-rose-600 hover:bg-rose-700 disabled:opacity-60"
                   type="button"
-                  onClick={deleteAccount}
+                  onClick={openDeleteAccountPopup}
                   disabled={deletingAccount}
                 >
                   {deletingAccount ? "Deleting..." : "Delete My Account"}
@@ -2818,32 +2818,27 @@ export default function AuthorityDashboard() {
         </div>
       </div>
 
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
-          <div className="absolute left-4 right-4 top-6">
-            <div className="card max-h-[80vh] overflow-y-auto p-4">
-              <div className="flex items-center justify-between">
-                <div className="text-lg font-semibold font-display">Menu</div>
-                <button className="btn btn-ghost" onClick={() => setSidebarOpen(false)} aria-label="Close menu" type="button">
-                  Close
-                </button>
-              </div>
-              <div className="mt-4">
-                <Sidebar
-                  items={menu}
-                  active={active}
-                  onSelect={(item) => {
-                    handleSelect(item);
-                    setSidebarOpen(false);
-                  }}
-                  user={user}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <DashboardMobileSidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        items={menu}
+        active={active}
+        onSelect={handleSelect}
+        user={user}
+      />
+
+      <DangerConfirmPopup
+        open={deleteAccountOpen}
+        title="Delete your account?"
+        message="This will deactivate your account access. Your submitted records will remain stored and can be restored by the administrator."
+        note="Please pause for a moment and make sure this is the action you want."
+        confirmLabel="Delete My Account"
+        loadingLabel="Deleting..."
+        loading={deletingAccount}
+        errorMessage={deleteMessage}
+        onClose={closeDeleteAccountPopup}
+        onConfirm={deleteAccount}
+      />
     </div>
   );
 }

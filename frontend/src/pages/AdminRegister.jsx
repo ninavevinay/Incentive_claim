@@ -3,6 +3,21 @@ import { Link, useNavigate } from "react-router-dom";
 import { handleOtpVerify, useAuth } from "../lib/auth.jsx";
 import { api } from "../lib/api.js";
 import { getDashboardPathForUser } from "../lib/routeMap.js";
+import { AuthShell } from "../components/layout/index.js";
+import { Shield, Users } from "lucide-react";
+
+const ADMIN_FEATURES = [
+  {
+    icon: Shield,
+    title: "System Administration",
+    description: "Full control over users, authorities, and application records."
+  },
+  {
+    icon: Users,
+    title: "Role Management",
+    description: "Register coordinators, HODs, and institution-level reviewers."
+  }
+];
 
 export default function AdminRegister() {
   const navigate = useNavigate();
@@ -59,105 +74,105 @@ export default function AdminRegister() {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-shell">
-        <section className="card p-6 md:p-10">
-          <div className="badge">SBJIT NPTEL Reimburse</div>
-          <h1 className="mt-6 text-3xl font-semibold font-display sm:text-4xl">Admin access registration</h1>
-          <p className="muted mt-3 text-sm">
-            Create the first admin account by setting a password and verifying an allowlisted college email with OTP.
-          </p>
-          <div className="mt-8 grid gap-4 sm:grid-cols-2">
-            <div className="kpi">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Control</div>
-              <div className="kpi-value">Users</div>
-              <p className="mt-1 text-xs text-black/60">Manage accounts and authority roles</p>
-            </div>
-            <div className="kpi">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Security</div>
-              <div className="kpi-value">Password + OTP</div>
-              <p className="mt-1 text-xs text-black/60">Only allowlisted admins can self-register</p>
-            </div>
-          </div>
-          <div className="mt-4 panel p-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-black/40">Admin Rule</div>
-            <p className="mt-2 text-sm">The email must be in the backend <span className="font-semibold">ADMIN_EMAIL_ALLOWLIST</span>.</p>
-          </div>
-        </section>
-
-        <section className="card p-6 md:p-10">
-          <div className="section-eyebrow">Admin Claim Access</div>
-          <h2 className="section-head">Register admin with Password and OTP</h2>
-          <form className="mt-8 space-y-4" onSubmit={otpRequested ? verifyOtp : requestOtp}>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Full name</label>
-              <input
-                className="input mt-2"
-                required
-                placeholder="Your name"
-                value={form.name}
-                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-black/40">College Email</label>
-              <input
-                className="input mt-2"
-                type="email"
-                required
-                placeholder="admin@sbjit.edu.in"
-                value={form.email}
-                onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Password</label>
-              <input
-                className="input mt-2"
-                type="password"
-                required
-                minLength={6}
-                placeholder="Create a password"
-                value={form.password}
-                onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
-              />
-            </div>
-            <div className="rounded-2xl border border-black/10 bg-white/70 p-4 text-sm text-black/70">
-              Role: <span className="font-semibold text-black">Admin</span><br />
-              Department: <span className="font-semibold text-black">Administration</span>
-            </div>
-            {otpRequested && (
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-black/40">OTP</label>
-                <input
-                  className="input mt-2"
-                  inputMode="numeric"
-                  required
-                  placeholder="Enter OTP"
-                  value={form.otp}
-                  onChange={(e) => setForm((prev) => ({ ...prev, otp: e.target.value }))}
-                />
-              </div>
-            )}
-            {message && <div className="text-sm text-emerald-700">{message}</div>}
-            {error && <div className="text-sm text-rose-600">{error}</div>}
-            <button className="btn btn-primary w-full" type="submit" disabled={sending || verifying}>
-              {otpRequested ? (verifying ? "Verifying..." : "Verify OTP & Create Account") : (sending ? "Sending OTP..." : "Send OTP")}
-            </button>
-            {otpRequested && (
-              <button className="btn btn-ghost w-full" type="button" onClick={requestOtp} disabled={sending || verifying}>
-                {sending ? "Resending..." : "Resend OTP"}
-              </button>
-            )}
-          </form>
-          <p className="mt-6 text-sm text-black/60">
-            Already have an account? <Link className="text-black underline" to="/login">Login</Link>
-          </p>
-          <p className="mt-2 text-sm text-black/60">
-            Student/Faculty registration? <Link className="text-black underline" to="/register">Go to Register</Link>
-          </p>
-        </section>
+    <AuthShell
+      eyebrow="Administrator Access"
+      title="Register admin account"
+      subtitle="Create the first admin account with password and OTP verification on an allowlisted email."
+      features={ADMIN_FEATURES}
+    >
+      <div className="alert-info mb-6">
+        Email must be in the backend <strong>ADMIN_EMAIL_ALLOWLIST</strong>. Role is fixed as Admin.
       </div>
-    </div>
+
+      <form className="space-y-4" onSubmit={otpRequested ? verifyOtp : requestOtp}>
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Full Name
+          </label>
+          <input
+            className="input"
+            required
+            placeholder="Your name"
+            value={form.name}
+            onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+            College Email
+          </label>
+          <input
+            className="input"
+            type="email"
+            required
+            placeholder="admin@sbjit.edu.in"
+            value={form.email}
+            onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Password
+          </label>
+          <input
+            className="input"
+            type="password"
+            required
+            minLength={6}
+            placeholder="Create a password"
+            value={form.password}
+            onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
+          />
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+          Role: <span className="font-semibold text-slate-900">Admin</span>
+          <br />
+          Department: <span className="font-semibold text-slate-900">Administration</span>
+        </div>
+        {otpRequested && (
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+              OTP
+            </label>
+            <input
+              className="input"
+              inputMode="numeric"
+              required
+              placeholder="Enter OTP"
+              value={form.otp}
+              onChange={(e) => setForm((prev) => ({ ...prev, otp: e.target.value }))}
+            />
+          </div>
+        )}
+        {message && <div className="alert-success">{message}</div>}
+        {error && <div className="alert-error">{error}</div>}
+        <button className="btn btn-primary w-full" type="submit" disabled={sending || verifying}>
+          {otpRequested
+            ? verifying
+              ? "Verifying..."
+              : "Verify OTP & Create Account"
+            : sending
+              ? "Sending OTP..."
+              : "Send OTP"}
+        </button>
+        {otpRequested && (
+          <button className="btn btn-ghost w-full" type="button" onClick={requestOtp} disabled={sending || verifying}>
+            {sending ? "Resending..." : "Resend OTP"}
+          </button>
+        )}
+      </form>
+      <p className="mt-6 text-sm text-slate-500">
+        Already have an account?{" "}
+        <Link className="font-semibold text-[color:var(--primary-soft)] hover:underline" to="/login">
+          Sign in
+        </Link>
+      </p>
+      <p className="mt-2 text-sm text-slate-500">
+        Student/Faculty?{" "}
+        <Link className="font-semibold text-[color:var(--primary-soft)] hover:underline" to="/register">
+          Standard registration
+        </Link>
+      </p>
+    </AuthShell>
   );
 }

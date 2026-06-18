@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar.jsx";
+import DashboardMobileSidebar from "../components/DashboardMobileSidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
 import SubmitStatusPopup from "../components/SubmitStatusPopup.jsx";
+import DangerConfirmPopup from "../components/DangerConfirmPopup.jsx";
 import { api } from "../lib/api.js";
 import { useAuth, logout } from "../lib/auth.jsx";
 import { getApprovedAmount, withNotificationAmounts } from "../lib/amount.js";
@@ -55,6 +57,7 @@ export default function StudentDashboard() {
   const [departmentDraft, setDepartmentDraft] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState("");
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [form, setForm] = useState({
     department: "",
     applicantName: "",
@@ -359,12 +362,22 @@ export default function StudentDashboard() {
     setEditingDepartment(false);
   };
 
+  const openDeleteAccountPopup = () => {
+    setDeleteMessage("");
+    setDeleteAccountOpen(true);
+  };
+
+  const closeDeleteAccountPopup = () => {
+    if (deletingAccount) return;
+    setDeleteAccountOpen(false);
+  };
+
   const deleteAccount = async () => {
-    if (!window.confirm("Deactivate your account? You can contact admin to reactivate later.")) return;
     setDeleteMessage("");
     setDeletingAccount(true);
     try {
       await api.deleteMe();
+      setDeleteAccountOpen(false);
       logout(setUser);
     } catch (err) {
       setDeleteMessage(err.message || "Unable to delete account right now.");
@@ -414,7 +427,7 @@ export default function StudentDashboard() {
           <div className="dashboard-sidebar">
             <Sidebar items={menu} active={active} onSelect={handleSelect} user={user} />
           </div>
-          <div className="card dashboard-content">
+          <div className="dashboard-content">
           <Topbar title={`Student Portal`} subtitle={`Hello ${user?.name || ""}`} />
           {active !== "Application Form" && (
             <div className="dashboard-kpi-grid">
@@ -967,7 +980,7 @@ export default function StudentDashboard() {
                 <button
                   className="btn btn-danger disabled:opacity-60"
                   type="button"
-                  onClick={deleteAccount}
+                  onClick={openDeleteAccountPopup}
                   disabled={deletingAccount}
                 >
                   {deletingAccount ? "Deleting..." : "Delete My Account"}
@@ -997,32 +1010,27 @@ export default function StudentDashboard() {
         onViewApplications={submitPopup.type === "success" ? viewApplicationsFromPopup : undefined}
       />
 
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden animate-fade">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
-          <div className="absolute left-4 right-4 top-6 animate-slide-up">
-            <div className="card max-h-[80vh] overflow-y-auto p-4">
-              <div className="flex items-center justify-between">
-                <div className="text-lg font-bold font-display text-[color:var(--primary-deep)]">Menu</div>
-                <button className="btn btn-ghost" onClick={() => setSidebarOpen(false)} aria-label="Close menu" type="button">
-                  Close
-                </button>
-              </div>
-              <div className="mt-4">
-                <Sidebar
-                  items={menu}
-                  active={active}
-                  onSelect={(item) => {
-                    handleSelect(item);
-                    setSidebarOpen(false);
-                  }}
-                  user={user}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <DangerConfirmPopup
+        open={deleteAccountOpen}
+        title="Delete your account?"
+        message="This will deactivate your account access. Your existing records will stay in the system and can be reactivated by the administrator."
+        note="Please make sure you really want to proceed before continuing."
+        confirmLabel="Delete My Account"
+        loadingLabel="Deleting..."
+        loading={deletingAccount}
+        errorMessage={deleteMessage}
+        onClose={closeDeleteAccountPopup}
+        onConfirm={deleteAccount}
+      />
+
+      <DashboardMobileSidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        items={menu}
+        active={active}
+        onSelect={handleSelect}
+        user={user}
+      />
     </div>
   );
 }

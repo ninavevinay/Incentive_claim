@@ -68,7 +68,7 @@ export default function AppHeader({
     <>
       <ScrollToHash />
 
-      <header className="tpl-public-header">
+      <header className={`tpl-public-header ${isDashboardRoute ? "tpl-public-header--dashboard" : ""}`}>
         <div className="app-container tpl-public-header-inner">
           <Link
             to="/#home"
@@ -89,6 +89,8 @@ export default function AppHeader({
               </span>
             </span>
           </Link>
+
+          
 
           {!isDashboardRoute && (
             <nav className="tpl-public-nav">

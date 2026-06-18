@@ -152,7 +152,7 @@ export default function App() {
 
   return (
     <AuthProvider>
-      <div className="app-shell min-h-screen flex flex-col">
+      <div className={`app-shell min-h-screen flex flex-col ${isDashboardRoute ? "app-shell--dashboard" : ""}`}>
         <AppHeader
           isDashboardRoute={isDashboardRoute}
           mobileNavOpen={mobileNavOpen}

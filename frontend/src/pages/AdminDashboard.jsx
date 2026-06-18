@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import Topbar from "../components/Topbar.jsx";
 import Sidebar from "../components/Sidebar.jsx";
+import DashboardMobileSidebar from "../components/DashboardMobileSidebar.jsx";
+import DangerConfirmPopup from "../components/DangerConfirmPopup.jsx";
 import { api } from "../lib/api.js";
 import { useAuth, logout } from "../lib/auth.jsx";
 import { drawPdfHeader, getPdfHeaderImageDataUrl } from "../lib/pdfHeader.js";
 import { getStoredMenuSelection, setStoredMenuSelection } from "../lib/dashboardStorage.js";
+import { getApprovedAmount } from "../lib/amount.js";
 
 const AUTHORITY_ROLES = [
   { value: "department_coordinator", label: "Department Coordinator" },
@@ -34,6 +37,7 @@ const ADMIN_SECTIONS = [
   "Login Events",
   "User Feedback",
   "All Applications",
+  "Approved Students",
   "Form Filling Window"
 ];
 const AUTO_REFRESH_MS = 30000;
@@ -79,6 +83,14 @@ export default function AdminDashboard() {
   const [formWindowMessage, setFormWindowMessage] = useState("");
   const [applicationsMessage, setApplicationsMessage] = useState({ type: "", text: "" });
   const [usersMessage, setUsersMessage] = useState({ type: "", text: "" });
+  const [deleteDialog, setDeleteDialog] = useState({
+    open: false,
+    kind: "",
+    target: null,
+    confirmText: "",
+    loading: false,
+    error: ""
+  });
   const [bulkDeletingUsers, setBulkDeletingUsers] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [feedbackExporting, setFeedbackExporting] = useState(false);
@@ -98,6 +110,10 @@ export default function AdminDashboard() {
   const [loginEventsPage, setLoginEventsPage] = useState(1);
   const [feedbackPage, setFeedbackPage] = useState(1);
   const [applicationsPage, setApplicationsPage] = useState(1);
+  const [approvedStudentSearch, setApprovedStudentSearch] = useState("");
+  const [approvedStudentYearFilter, setApprovedStudentYearFilter] = useState("all");
+  const [approvedStudentDeptFilter, setApprovedStudentDeptFilter] = useState("all");
+  const [approvedStudentCategoryFilter, setApprovedStudentCategoryFilter] = useState("all");
 
   const loadUsersData = async ({ search = "", authorityOnly = false } = {}) => {
     const params = {
@@ -175,7 +191,7 @@ export default function AdminDashboard() {
       await loadFeedbackData(feedbackFilter.trim());
       return;
     }
-    if (activeSection === "All Applications") {
+    if (activeSection === "All Applications" || activeSection === "Approved Students") {
       await loadApplicationsData(applicationFilter.trim());
       return;
     }
@@ -293,6 +309,51 @@ export default function AdminDashboard() {
   });
 
   const sortedApplications = [...filteredApplications].sort((a, b) => a.id - b.id);
+
+  const approvedStudentRows = applications
+    .filter(
+      (app) =>
+        String(app?.status || "").toLowerCase() === "approved" &&
+        String(app?.application_type || "").toLowerCase() === "student"
+    )
+    .map((app) => {
+      const data = app.data || {};
+      return {
+        id: app.id,
+        name: data.applicant_name || data.application_name || "-",
+        academicYear: data.academic_year || "-",
+        department: data.department || "-",
+        category: data.course_category || "-",
+        approvedAmount: getApprovedAmount(app)
+      };
+    });
+
+  const approvedStudentYearOptions = Array.from(new Set(approvedStudentRows.map((row) => row.academicYear)))
+    .filter((year) => year && year !== "-")
+    .sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: "base" }));
+
+  const approvedStudentDeptOptions = Array.from(new Set(approvedStudentRows.map((row) => row.department)))
+    .filter((dept) => dept && dept !== "-")
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+
+  const approvedStudentCategoryOptions = Array.from(new Set(approvedStudentRows.map((row) => row.category)))
+    .filter((category) => category && category !== "-")
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+
+  const filteredApprovedStudents = approvedStudentRows.filter((row) => {
+    const search = approvedStudentSearch.trim().toLowerCase();
+    const namePass = !search || row.name.toLowerCase().includes(search);
+    const yearPass = approvedStudentYearFilter === "all" || row.academicYear === approvedStudentYearFilter;
+    const deptPass = approvedStudentDeptFilter === "all" || row.department === approvedStudentDeptFilter;
+    const categoryPass = approvedStudentCategoryFilter === "all" || row.category === approvedStudentCategoryFilter;
+    return namePass && yearPass && deptPass && categoryPass;
+  });
+
+  const filteredApprovedStudentsTotal = filteredApprovedStudents.reduce((sum, row) => {
+    const amount = Number(row.approvedAmount);
+    return sum + (Number.isFinite(amount) ? amount : 0);
+  }, 0);
+
   const usersPageData = paginateRows(filteredUsers, usersPage);
   const authorityPageData = paginateRows(filteredAuthorityUsers, authorityPage);
   const loginEventsPageData = paginateRows(loginEvents, loginEventsPage);
@@ -347,52 +408,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const deleteUser = async (userId) => {
-    setUsersMessage({ type: "", text: "" });
-    try {
-      if (!window.confirm("Delete this user and all related data?")) return;
-      await api.adminDeleteUser(userId);
-      await loadAdminData();
-      setExpandedAppId(null);
-      setViewMode("list");
-      setUsersMessage({ type: "success", text: "User deleted." });
-      setError("");
-    } catch (err) {
-      const message = err.message || "Failed to delete user";
-      setUsersMessage({ type: "error", text: message });
-      setError(message);
-    }
-  };
-
-  const deleteAllNonAdminUsers = async () => {
-    setUsersMessage({ type: "", text: "" });
-    if (nonAdminUsers.length === 0) {
-      setUsersMessage({ type: "error", text: "No non-admin users to delete." });
-      return;
-    }
-    const confirmation = window.prompt('Type "DELETE USERS" to remove all non-admin users.');
-    if (confirmation !== "DELETE USERS") return;
-    setBulkDeletingUsers(true);
-    try {
-      const result = await api.adminDeleteAllNonAdminUsers();
-      await loadAdminData();
-      setExpandedAppId(null);
-      setViewMode("list");
-      setUsersMessage({
-        type: "success",
-        text: result?.message || "All non-admin users deleted."
-      });
-      setApplicationsMessage({ type: "", text: "" });
-      setError("");
-    } catch (err) {
-      const message = err.message || "Failed to delete non-admin users";
-      setUsersMessage({ type: "error", text: message });
-      setError(message);
-    } finally {
-      setBulkDeletingUsers(false);
-    }
-  };
-
   const submitFormWindow = async (e) => {
     e.preventDefault();
     setFormWindowMessage("");
@@ -412,40 +427,157 @@ export default function AdminDashboard() {
     }
   };
 
-  const deleteApplication = async (appId) => {
-    setApplicationsMessage({ type: "", text: "" });
-    try {
-      if (!window.confirm("Delete this application permanently?")) return;
-      await api.adminDeleteApplication(appId);
-      setApplications((prev) => prev.filter((app) => app.id !== appId));
-      if (expandedAppId === appId) {
-        setExpandedAppId(null);
-        setViewMode("list");
-      }
-      setApplicationsMessage({ type: "success", text: `Application ${appId} deleted.` });
-    } catch (err) {
-      setApplicationsMessage({ type: "error", text: err.message || "Failed to delete application" });
-    }
+  const openDeleteDialog = (kind, target = null) => {
+    setDeleteDialog({
+      open: true,
+      kind,
+      target,
+      confirmText: "",
+      loading: false,
+      error: ""
+    });
   };
 
-  const deleteAllApplications = async () => {
+  const requestDeleteUser = (targetUser) => {
+    setUsersMessage({ type: "", text: "" });
+    openDeleteDialog("user", targetUser);
+  };
+
+  const requestDeleteAllNonAdminUsers = () => {
+    setUsersMessage({ type: "", text: "" });
+    if (nonAdminUsers.length === 0) {
+      setUsersMessage({ type: "error", text: "No non-admin users to delete." });
+      return;
+    }
+    openDeleteDialog("all-users");
+  };
+
+  const requestDeleteApplication = (app) => {
+    setApplicationsMessage({ type: "", text: "" });
+    openDeleteDialog("application", app);
+  };
+
+  const requestDeleteAllApplications = () => {
     setApplicationsMessage({ type: "", text: "" });
     if (applications.length === 0) {
       setApplicationsMessage({ type: "error", text: "No applications to delete." });
       return;
     }
-    const confirmation = window.prompt('Type "DELETE" to remove all applications.');
-    if (confirmation !== "DELETE") return;
-    setBulkDeleting(true);
+    openDeleteDialog("all-applications");
+  };
+
+  const closeDeleteDialog = () => {
+    setDeleteDialog((prev) => {
+      if (prev.loading) return prev;
+      return {
+        open: false,
+        kind: "",
+        target: null,
+        confirmText: "",
+        loading: false,
+        error: ""
+      };
+    });
+  };
+
+  const updateDeleteDialogText = (value) => {
+    setDeleteDialog((prev) => ({ ...prev, confirmText: value, error: "" }));
+  };
+
+  const resetDeleteDialog = () => {
+    setDeleteDialog({
+      open: false,
+      kind: "",
+      target: null,
+      confirmText: "",
+      loading: false,
+      error: ""
+    });
+  };
+
+  const confirmDeleteDialog = async () => {
+    const { kind, target } = deleteDialog;
+    if (!kind) return;
+    setDeleteDialog((prev) => ({ ...prev, loading: true, error: "" }));
     try {
-      await api.adminDeleteAllApplications();
-      setApplications([]);
-      setExpandedAppId(null);
-      setViewMode("list");
-      setApplicationsMessage({ type: "success", text: "All applications deleted." });
+      if (kind === "user") {
+        const userId = Number(target?.id);
+        if (!Number.isFinite(userId)) {
+          throw new Error("Invalid user selected for deletion.");
+        }
+        setUsersMessage({ type: "", text: "" });
+        await api.adminDeleteUser(userId);
+        await loadAdminData();
+        setExpandedAppId(null);
+        setViewMode("list");
+        setUsersMessage({ type: "success", text: "User deleted." });
+        setError("");
+      } else if (kind === "all-users") {
+        setUsersMessage({ type: "", text: "" });
+        if (nonAdminUsers.length === 0) {
+          throw new Error("No non-admin users to delete.");
+        }
+        setBulkDeletingUsers(true);
+        const result = await api.adminDeleteAllNonAdminUsers();
+        await loadAdminData();
+        setExpandedAppId(null);
+        setViewMode("list");
+        setUsersMessage({
+          type: "success",
+          text: result?.message || "All non-admin users deleted."
+        });
+        setApplicationsMessage({ type: "", text: "" });
+        setError("");
+      } else if (kind === "application") {
+        const appId = Number(target?.id);
+        if (!Number.isFinite(appId)) {
+          throw new Error("Invalid application selected for deletion.");
+        }
+        setApplicationsMessage({ type: "", text: "" });
+        await api.adminDeleteApplication(appId);
+        setApplications((prev) => prev.filter((app) => app.id !== appId));
+        if (expandedAppId === appId) {
+          setExpandedAppId(null);
+          setViewMode("list");
+        }
+        setApplicationsMessage({ type: "success", text: `Application ${appId} deleted.` });
+      } else if (kind === "all-applications") {
+        setApplicationsMessage({ type: "", text: "" });
+        if (applications.length === 0) {
+          throw new Error("No applications to delete.");
+        }
+        setBulkDeleting(true);
+        await api.adminDeleteAllApplications();
+        setApplications([]);
+        setExpandedAppId(null);
+        setViewMode("list");
+        setApplicationsMessage({ type: "success", text: "All applications deleted." });
+      } else {
+        throw new Error("Unknown delete action.");
+      }
+      resetDeleteDialog();
     } catch (err) {
-      setApplicationsMessage({ type: "error", text: err.message || "Failed to delete applications" });
-    } finally {
+      const message = err.message || "Failed to complete delete action";
+      setDeleteDialog((prev) => ({ ...prev, loading: false, error: message }));
+      if (kind === "all-users") {
+        setBulkDeletingUsers(false);
+      }
+      if (kind === "all-applications") {
+        setBulkDeleting(false);
+      }
+      if (kind === "user") {
+        setUsersMessage({ type: "error", text: message });
+        setError(message);
+      }
+      if (kind === "application") {
+        setApplicationsMessage({ type: "error", text: message });
+      }
+      return;
+    }
+    if (kind === "all-users") {
+      setBulkDeletingUsers(false);
+    }
+    if (kind === "all-applications") {
       setBulkDeleting(false);
     }
   };
@@ -598,6 +730,62 @@ export default function AdminDashboard() {
     setApplicationsMessage({ type: "", text: "" });
   };
 
+  const deleteDialogConfig = (() => {
+    const target = deleteDialog.target || {};
+    const appId = target?.id ?? "-";
+    const applicantName = target?.data?.applicant_name || target?.data?.application_name || "the selected application";
+    const userName = target?.name || "this user";
+
+    switch (deleteDialog.kind) {
+      case "user":
+        return {
+          title: `Delete ${userName}?`,
+          message: `This will permanently remove ${userName} and all related data from the system.`,
+          note: "Use this only when you are sure the account and history should be removed.",
+          confirmLabel: "Delete User",
+          loadingLabel: "Deleting..."
+        };
+      case "all-users":
+        return {
+          title: "Delete all non-admin users?",
+          message: "This removes every non-admin account and all related records from the system.",
+          note: 'Type "DELETE USERS" exactly to continue.',
+          confirmLabel: "Delete All Users",
+          loadingLabel: "Deleting...",
+          confirmText: "DELETE USERS",
+          confirmTextLabel: 'Type "DELETE USERS" to confirm',
+          confirmTextPlaceholder: "DELETE USERS"
+        };
+      case "application":
+        return {
+          title: `Delete application #${appId}?`,
+          message: `This will permanently delete ${applicantName} and any attached files.`,
+          note: "Review the record carefully before deleting it.",
+          confirmLabel: "Delete Application",
+          loadingLabel: "Deleting..."
+        };
+      case "all-applications":
+        return {
+          title: "Delete all applications?",
+          message: "This removes every application and its uploaded files from the system.",
+          note: 'Type "DELETE" exactly to continue.',
+          confirmLabel: "Delete All Applications",
+          loadingLabel: "Deleting...",
+          confirmText: "DELETE",
+          confirmTextLabel: 'Type "DELETE" to confirm',
+          confirmTextPlaceholder: "DELETE"
+        };
+      default:
+        return {
+          title: "Confirm deletion",
+          message: "This action will permanently remove the selected record.",
+          note: "Please review the record carefully before continuing.",
+          confirmLabel: "Delete",
+          loadingLabel: "Deleting..."
+        };
+    }
+  })();
+
   return (
     <div className="dashboard-page">
       <div className="page-container">
@@ -611,7 +799,7 @@ export default function AdminDashboard() {
           <div className="dashboard-sidebar">
             <Sidebar items={ADMIN_SECTIONS} active={activeSection} onSelect={selectSection} user={user} />
           </div>
-        <div className="card dashboard-content">
+        <div className="dashboard-content">
         <div className="panel flex flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div>
             <div className="text-xs uppercase tracking-[0.2em] text-black/40">Admin Console</div>
@@ -688,7 +876,7 @@ export default function AdminDashboard() {
                 <button
                   className="btn btn-ghost text-rose-600"
                   type="button"
-                  onClick={deleteAllNonAdminUsers}
+                  onClick={requestDeleteAllNonAdminUsers}
                   disabled={bulkDeletingUsers || nonAdminUsers.length === 0}
                 >
                   {bulkDeletingUsers ? "Deleting..." : "Delete All Non-Admin Users"}
@@ -719,7 +907,7 @@ export default function AdminDashboard() {
                         <button
                           className="btn btn-ghost text-rose-600"
                           type="button"
-                          onClick={() => deleteUser(u.id)}
+                          onClick={() => requestDeleteUser(u)}
                         >
                           Delete
                         </button>
@@ -756,7 +944,7 @@ export default function AdminDashboard() {
                             <button
                               className="btn btn-ghost"
                               type="button"
-                              onClick={() => deleteUser(u.id)}
+                              onClick={() => requestDeleteUser(u)}
                             >
                               Delete
                             </button>
@@ -1102,6 +1290,123 @@ export default function AdminDashboard() {
         </section>
         )}
 
+        {activeSection === "Approved Students" && (
+        <section className="mt-8">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-xl font-semibold font-display">Approved Students</h2>
+            <div className="text-sm text-[color:var(--ink-soft)]">{filteredApprovedStudents.length} records</div>
+          </div>
+
+          <div className="mt-4 grid min-h-0 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+            <aside className="panel space-y-4 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">Search & Filters</div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
+                  Search by Name
+                </label>
+                <input
+                  className="input"
+                  placeholder="Student name"
+                  value={approvedStudentSearch}
+                  onChange={(e) => setApprovedStudentSearch(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
+                  Academic Year
+                </label>
+                <select
+                  className="input"
+                  value={approvedStudentYearFilter}
+                  onChange={(e) => setApprovedStudentYearFilter(e.target.value)}
+                >
+                  <option value="all">All Academic Years</option>
+                  {approvedStudentYearOptions.map((year) => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
+                  Department
+                </label>
+                <select
+                  className="input"
+                  value={approvedStudentDeptFilter}
+                  onChange={(e) => setApprovedStudentDeptFilter(e.target.value)}
+                >
+                  <option value="all">All Departments</option>
+                  {approvedStudentDeptOptions.map((dept) => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
+                  Category
+                </label>
+                <select
+                  className="input"
+                  value={approvedStudentCategoryFilter}
+                  onChange={(e) => setApprovedStudentCategoryFilter(e.target.value)}
+                >
+                  <option value="all">All Categories</option>
+                  {approvedStudentCategoryOptions.map((category) => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2 text-sm">
+                <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--paper-strong)] px-3 py-2">
+                  <span className="text-[color:var(--ink-soft)]">Total Approved:</span> {approvedStudentRows.length}
+                </div>
+                <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--paper-strong)] px-3 py-2">
+                  <span className="text-[color:var(--ink-soft)]">Filtered:</span> {filteredApprovedStudents.length}
+                </div>
+                <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--paper-strong)] px-3 py-2">
+                  <span className="text-[color:var(--ink-soft)]">Approved Total (Rs):</span> {filteredApprovedStudentsTotal.toFixed(2)}
+                </div>
+              </div>
+            </aside>
+
+            <div className="panel p-4">
+              <div className="overflow-x-auto">
+                <table className="data-table min-w-[720px]">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Academic Year</th>
+                      <th>Department</th>
+                      <th>Category</th>
+                      <th>Approved Amt (Rs)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredApprovedStudents.map((row) => (
+                      <tr key={row.id}>
+                        <td className="font-medium">{row.name}</td>
+                        <td>{row.academicYear}</td>
+                        <td>{row.department}</td>
+                        <td>{row.category}</td>
+                        <td>{row.approvedAmount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {filteredApprovedStudents.length === 0 && (
+                  <div className="mt-3 text-sm text-[color:var(--ink-soft)]">No approved student applications found.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+        )}
+
         {activeSection === "Form Filling Window" && (
         <section className="mt-10 panel p-4">
           <div className="flex items-center justify-between">
@@ -1149,7 +1454,7 @@ export default function AdminDashboard() {
               <button
                 className="btn btn-ghost text-rose-600"
                 type="button"
-                onClick={deleteAllApplications}
+                onClick={requestDeleteAllApplications}
                 disabled={bulkDeleting}
               >
                 {bulkDeleting ? "Deleting..." : "Delete All"}
@@ -1178,7 +1483,7 @@ export default function AdminDashboard() {
                     <button
                       className="btn btn-ghost text-rose-600"
                       type="button"
-                      onClick={() => deleteApplication(selectedApplication.id)}
+                      onClick={() => requestDeleteApplication(selectedApplication)}
                     >
                       Delete
                     </button>
@@ -1206,7 +1511,7 @@ export default function AdminDashboard() {
                       <button
                         className="btn btn-ghost text-rose-600"
                         type="button"
-                        onClick={() => deleteApplication(app.id)}
+                        onClick={() => requestDeleteApplication(app)}
                       >
                         Delete
                       </button>
@@ -1258,7 +1563,7 @@ export default function AdminDashboard() {
                         <button
                           className="btn btn-ghost text-rose-600"
                           type="button"
-                          onClick={() => deleteApplication(app.id)}
+                          onClick={() => requestDeleteApplication(app)}
                         >
                           Delete
                         </button>
@@ -1301,7 +1606,7 @@ export default function AdminDashboard() {
                               <button
                                 className="btn btn-ghost text-rose-600"
                                 type="button"
-                                onClick={() => deleteApplication(app.id)}
+                                onClick={() => requestDeleteApplication(app)}
                               >
                                 Delete
                               </button>
@@ -1352,32 +1657,32 @@ export default function AdminDashboard() {
       </div>
       </div>
 
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
-          <div className="absolute bottom-6 left-4 right-4 top-6">
-            <div className="card h-full overflow-y-auto p-4">
-              <div className="flex items-center justify-between">
-                <div className="text-lg font-semibold font-display">Menu</div>
-                <button className="btn btn-ghost" onClick={() => setSidebarOpen(false)} aria-label="Close menu" type="button">
-                  Close
-                </button>
-              </div>
-              <div className="mt-4 space-y-2">
-                <Sidebar
-                  items={ADMIN_SECTIONS}
-                  active={activeSection}
-                  user={user}
-                  onSelect={(section) => {
-                    selectSection(section);
-                    setSidebarOpen(false);
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <DangerConfirmPopup
+        open={deleteDialog.open}
+        title={deleteDialogConfig.title}
+        message={deleteDialogConfig.message}
+        note={deleteDialogConfig.note}
+        confirmLabel={deleteDialogConfig.confirmLabel}
+        loadingLabel={deleteDialogConfig.loadingLabel}
+        confirmText={deleteDialogConfig.confirmText || ""}
+        confirmTextLabel={deleteDialogConfig.confirmTextLabel || "Type the confirmation text"}
+        confirmTextPlaceholder={deleteDialogConfig.confirmTextPlaceholder || ""}
+        confirmTextValue={deleteDialog.confirmText}
+        onConfirmTextChange={updateDeleteDialogText}
+        errorMessage={deleteDialog.error}
+        loading={deleteDialog.loading}
+        onClose={closeDeleteDialog}
+        onConfirm={confirmDeleteDialog}
+      />
+
+      <DashboardMobileSidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        items={ADMIN_SECTIONS}
+        active={activeSection}
+        onSelect={selectSection}
+        user={user}
+      />
     </div>
   );
 }

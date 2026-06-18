@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { handleOtpVerify, useAuth } from "../lib/auth.jsx";
 import { api } from "../lib/api.js";
 import { getDashboardPathForUser } from "../lib/routeMap.js";
+import { AuthShell } from "../components/layout/index.js";
 
 const DEPARTMENTS = [
   "First Year",
@@ -79,100 +80,131 @@ export default function Register() {
   };
 
   return (
-    <div className="auth-page">
-      <div className="mx-auto w-full max-w-xl">
-        <section className="card p-6 md:p-10">
-          <div className="section-eyebrow">Claim Registration</div>
-          <h2 className="section-head">Register with Password and OTP</h2>
-          <form className="mt-8 space-y-4" onSubmit={otpRequested ? verifyOtp : requestOtp}>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Full name</label>
-              <input
-                className="input mt-2"
-                required
-                placeholder="Your name"
-                value={form.name}
-                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-black/40">College Email</label>
-              <input
-                className="input mt-2"
-                type="email"
-                required
-                placeholder="you@sbjit.edu.in"
-                value={form.email}
-                onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Password</label>
-              <input
-                className="input mt-2"
-                type="password"
-                required
-                minLength={6}
-                placeholder="Create a password"
-                value={form.password}
-                onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Role</label>
-              <select
-                className="input mt-2"
-                required
-                value={form.role}
-                onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value }))}
-              >
-                <option value="student">Student</option>
-                <option value="faculty">Faculty</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Department</label>
-              <select
-                className="input mt-2"
-                required
-                value={form.department}
-                onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))}
-              >
-                <option value="" disabled>Select department</option>
-                {DEPARTMENTS.map((department) => (
-                  <option key={department} value={department}>{department}</option>
-                ))}
-              </select>
-            </div>
-            {otpRequested && (
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-black/40">OTP</label>
-                <input
-                  className="input mt-2"
-                  inputMode="numeric"
-                  required
-                  placeholder="Enter OTP"
-                  value={form.otp}
-                  onChange={(e) => setForm((prev) => ({ ...prev, otp: e.target.value }))}
-                />
-              </div>
-            )}
-            {message && <div className="text-sm text-emerald-700">{message}</div>}
-            {error && <div className="text-sm text-rose-600">{error}</div>}
-            <button className="btn btn-primary w-full" type="submit" disabled={sending || verifying}>
-              {otpRequested ? (verifying ? "Verifying..." : "Verify OTP & Create Account") : (sending ? "Sending OTP..." : "Send OTP")}
-            </button>
-            {otpRequested && (
-              <button className="btn btn-ghost w-full" type="button" onClick={requestOtp} disabled={sending || verifying}>
-                {sending ? "Resending..." : "Resend OTP"}
-              </button>
-            )}
-          </form>
-          <p className="mt-6 text-sm text-black/60">
-            Already have an account? <Link className="text-black underline" to="/login">Login</Link>
-          </p>
-        </section>
-      </div>
-    </div>
+    <AuthShell
+      wide
+      eyebrow="New Account"
+      title="Create your portal account"
+      subtitle="Register with your college email, set a password, and verify via OTP."
+    >
+      <form className="space-y-4" onSubmit={otpRequested ? verifyOtp : requestOtp}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Full Name
+            </label>
+            <input
+              className="input"
+              required
+              placeholder="Your name"
+              value={form.name}
+              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+              College Email
+            </label>
+            <input
+              className="input"
+              type="email"
+              required
+              placeholder="you@sbjit.edu.in"
+              value={form.email}
+              onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Password
+            </label>
+            <input
+              className="input"
+              type="password"
+              required
+              minLength={6}
+              placeholder="Create a password"
+              value={form.password}
+              onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Role
+            </label>
+            <select
+              className="input"
+              required
+              value={form.role}
+              onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value }))}
+            >
+              <option value="student">Student</option>
+              <option value="faculty">Faculty</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Department
+            </label>
+            <select
+              className="input"
+              required
+              value={form.department}
+              onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))}
+            >
+              <option value="" disabled>
+                Select department
+              </option>
+              {DEPARTMENTS.map((department) => (
+                <option key={department} value={department}>
+                  {department}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {otpRequested && (
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+              OTP Verification
+            </label>
+            <input
+              className="input"
+              inputMode="numeric"
+              required
+              placeholder="Enter OTP from email"
+              value={form.otp}
+              onChange={(e) => setForm((prev) => ({ ...prev, otp: e.target.value }))}
+            />
+          </div>
+        )}
+
+        {message && <div className="alert-success">{message}</div>}
+        {error && <div className="alert-error">{error}</div>}
+
+        <button className="btn btn-primary w-full" type="submit" disabled={sending || verifying}>
+          {otpRequested
+            ? verifying
+              ? "Verifying..."
+              : "Verify OTP & Create Account"
+            : sending
+              ? "Sending OTP..."
+              : "Send OTP"}
+        </button>
+
+        {otpRequested && (
+          <button className="btn btn-ghost w-full" type="button" onClick={requestOtp} disabled={sending || verifying}>
+            {sending ? "Resending..." : "Resend OTP"}
+          </button>
+        )}
+      </form>
+
+      <p className="mt-6 text-sm text-slate-500">
+        Already have an account?{" "}
+        <Link className="font-semibold text-[color:var(--primary-soft)] hover:underline" to="/login">
+          Sign in
+        </Link>
+      </p>
+    </AuthShell>
   );
 }

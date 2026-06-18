@@ -57,6 +57,7 @@ STATUS_LABELS = {
     "rejected": "Rejected",
 }
 ALLOWED_COURSE_CATEGORIES = {
+    # Accept both legacy Elite labels and the current NPTEL dropdown labels.
     "ELITE",
     "ELITE + SILVER",
     "ELITE + GOLD",
@@ -66,6 +67,13 @@ ALLOWED_COURSE_CATEGORIES = {
     "ELITE + GOLD + TOP 5%",
     "ELITE + GOLD + TOP 2%",
     "ELITE + GOLD + TOP 1%",
+    "NPTEL SUPER STAR",
+    "NPTEL DISCIPLINE STAR",
+    "NPTEL DOMAIN SCHOLAR",
+    "NPTEL BELIEVER",
+    "NPTEL ENTHUSIAST",
+    "NPTEL MOTIVATED LEARNER",
+    "NPTEL EVANGELIST",
 }
 ALLOWED_ACADEMIC_YEAR_TYPES = {"ODD", "EVEN"}
 APPLICATION_UPLOAD_FIELDS = (

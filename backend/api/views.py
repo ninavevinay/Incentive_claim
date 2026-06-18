@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+from html import escape
+from pathlib import Path
+import mimetypes
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import CharField, Q
 from django.db.models.functions import Cast
+from django.http import FileResponse, HttpResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -106,6 +111,30 @@ def _require_admin_or_institution_coordinator(user: User) -> None:
 
 def _serialize_many(serializer_class, items):
     return serializer_class(items, many=True).data
+
+
+def serve_media_file(request, path: str):
+    if request.method not in {"GET", "HEAD"}:
+        return HttpResponse(status=405)
+
+    safe_name = Path(str(path or "").strip()).name
+    media_path = Path(settings.MEDIA_ROOT) / safe_name
+    if media_path.is_file():
+        content_type = mimetypes.guess_type(media_path.name)[0] or "application/octet-stream"
+        return FileResponse(media_path.open("rb"), content_type=content_type, filename=media_path.name)
+
+    display_name = escape(safe_name or "uploaded file")
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-label="Missing upload placeholder">
+  <rect width="1200" height="800" fill="#f8fafc"/>
+  <rect x="80" y="80" width="1040" height="640" rx="28" fill="#ffffff" stroke="#cbd5e1" stroke-width="4"/>
+  <text x="600" y="330" text-anchor="middle" font-family="Times New Roman, serif" font-size="48" fill="#111827">File unavailable</text>
+  <text x="600" y="405" text-anchor="middle" font-family="Arial, sans-serif" font-size="26" fill="#334155">{display_name}</text>
+  <text x="600" y="465" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" fill="#64748b">This upload is missing from the server.</text>
+  <text x="600" y="505" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" fill="#64748b">Please contact the portal administrator.</text>
+</svg>"""
+    response = HttpResponse(svg, content_type="image/svg+xml", status=200)
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 @api_view(["GET"])

@@ -8,6 +8,7 @@ _startup_repair_done = False
 class ApiConfig(AppConfig):
     default_auto_field = "django.db.models.AutoField"
     name = "api"
+    
 
     def ready(self) -> None:
         global _startup_repair_done

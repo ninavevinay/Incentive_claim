@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api.js";
+import { AuthShell } from "../components/layout/index.js";
 
 export default function ForgotPassword() {
   const navigate = useNavigate();
@@ -64,118 +65,126 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-shell">
-        <section className="card p-6 md:p-10">
-          <div className="badge">SBJIT NPTEL Reimburse</div>
-          <h1 className="mt-6 text-3xl font-semibold font-display sm:text-4xl">Forgot your password?</h1>
-          <p className="muted mt-3 text-sm">
-            Verify your college email with OTP and set a new password for your portal account.
-          </p>
-          <div className="mt-8 grid gap-4 sm:grid-cols-2">
-            <div className="kpi">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Step 1</div>
-              <div className="kpi-value">Send OTP</div>
-              <p className="mt-1 text-xs text-black/60">Get reset OTP on your registered email address</p>
-            </div>
-            <div className="kpi">
-              <div className="text-xs uppercase tracking-[0.2em] text-black/40">Step 2</div>
-              <div className="kpi-value">Set Password</div>
-              <p className="mt-1 text-xs text-black/60">Enter OTP and choose a new login password</p>
-            </div>
-          </div>
-          <div className="mt-6 panel p-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-black/40">Security Rule</div>
-            <p className="mt-2 text-sm">Only verified <span className="font-semibold">@sbjit.edu.in</span> users can reset passwords.</p>
-          </div>
-        </section>
+    <AuthShell
+      eyebrow="Account Recovery"
+      title={otpRequested ? "Set your new password" : "Reset your password"}
+      subtitle="Verify your college email with OTP and choose a new secure password."
+    >
+      <div className="mb-6 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Step 1</div>
+          <div className="mt-1 text-sm font-semibold text-slate-800">Request OTP</div>
+          <p className="mt-1 text-xs text-slate-500">Sent to your registered email</p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Step 2</div>
+          <div className="mt-1 text-sm font-semibold text-slate-800">Set Password</div>
+          <p className="mt-1 text-xs text-slate-500">Enter OTP and new credentials</p>
+        </div>
+      </div>
 
-        <section className="card p-6 md:p-10">
-          <div className="section-eyebrow">Password Recovery</div>
-          <h2 className="section-head">{otpRequested ? "Enter OTP and New Password" : "Request Password Reset OTP"}</h2>
+      <div className="alert-info mb-6">
+        Only verified <strong>@sbjit.edu.in</strong> users can reset passwords.
+      </div>
 
-          <form className="mt-8 space-y-4" onSubmit={otpRequested ? submitNewPassword : requestResetOtp}>
+      <form className="space-y-4" onSubmit={otpRequested ? submitNewPassword : requestResetOtp}>
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+            College Email
+          </label>
+          <input
+            className="input"
+            type="email"
+            required
+            placeholder="you@sbjit.edu.in"
+            value={form.email}
+            onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
+          />
+        </div>
+
+        {otpRequested && (
+          <>
             <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-black/40">College Email</label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+                OTP
+              </label>
               <input
-                className="input mt-2"
-                type="email"
+                className="input"
+                inputMode="numeric"
                 required
-                placeholder="you@sbjit.edu.in"
-                value={form.email}
-                onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
+                placeholder="Enter OTP"
+                value={form.otp}
+                onChange={(e) => setForm((prev) => ({ ...prev, otp: e.target.value }))}
               />
             </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+                New Password
+              </label>
+              <input
+                className="input"
+                type="password"
+                required
+                minLength={6}
+                placeholder="Enter new password"
+                value={form.newPassword}
+                onChange={(e) => setForm((prev) => ({ ...prev, newPassword: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Confirm New Password
+              </label>
+              <input
+                className="input"
+                type="password"
+                required
+                minLength={6}
+                placeholder="Confirm new password"
+                value={form.confirmPassword}
+                onChange={(e) => setForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
+              />
+            </div>
+          </>
+        )}
 
-            {otpRequested && (
-              <>
-                <div>
-                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">OTP</label>
-                  <input
-                    className="input mt-2"
-                    inputMode="numeric"
-                    required
-                    placeholder="Enter OTP"
-                    value={form.otp}
-                    onChange={(e) => setForm((prev) => ({ ...prev, otp: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">New Password</label>
-                  <input
-                    className="input mt-2"
-                    type="password"
-                    required
-                    minLength={6}
-                    placeholder="Enter new password"
-                    value={form.newPassword}
-                    onChange={(e) => setForm((prev) => ({ ...prev, newPassword: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">Confirm New Password</label>
-                  <input
-                    className="input mt-2"
-                    type="password"
-                    required
-                    minLength={6}
-                    placeholder="Confirm new password"
-                    value={form.confirmPassword}
-                    onChange={(e) => setForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
-                  />
-                </div>
-              </>
-            )}
+        {message && <div className="alert-success">{message}</div>}
+        {error && <div className="alert-error">{error}</div>}
 
-            {message && <div className="text-sm text-emerald-700">{message}</div>}
-            {error && <div className="text-sm text-rose-600">{error}</div>}
+        <button className="btn btn-primary w-full" type="submit" disabled={sending || resetting}>
+          {otpRequested
+            ? resetting
+              ? "Resetting..."
+              : "Verify OTP & Reset Password"
+            : sending
+              ? "Sending OTP..."
+              : "Send Reset OTP"}
+        </button>
 
-            <button className="btn btn-primary w-full" type="submit" disabled={sending || resetting}>
-              {otpRequested
-                ? (resetting ? "Resetting..." : "Verify OTP & Reset Password")
-                : (sending ? "Sending OTP..." : "Send Reset OTP")}
-            </button>
+        {otpRequested && (
+          <button
+            className="btn btn-ghost w-full"
+            type="button"
+            onClick={requestResetOtp}
+            disabled={sending || resetting}
+          >
+            {sending ? "Resending..." : "Resend OTP"}
+          </button>
+        )}
+      </form>
 
-            {otpRequested && (
-              <button
-                className="btn btn-ghost w-full"
-                type="button"
-                onClick={requestResetOtp}
-                disabled={sending || resetting}
-              >
-                {sending ? "Resending..." : "Resend OTP"}
-              </button>
-            )}
-          </form>
-
-          <p className="mt-6 text-sm text-black/60">
-            Remember your password? <Link className="text-black underline" to="/login">Back to Login</Link>
-          </p>
-          <p className="mt-2 text-sm text-black/60">
-            New user? <Link className="text-black underline" to="/register">Create account</Link>
-          </p>
-        </section>
-      </div>
-    </div>
+      <p className="mt-6 text-sm text-slate-500">
+        Remember your password?{" "}
+        <Link className="font-semibold text-[color:var(--primary-soft)] hover:underline" to="/login">
+          Back to Sign In
+        </Link>
+      </p>
+      <p className="mt-2 text-sm text-slate-500">
+        New user?{" "}
+        <Link className="font-semibold text-[color:var(--primary-soft)] hover:underline" to="/register">
+          Create account
+        </Link>
+      </p>
+    </AuthShell>
   );
 }
