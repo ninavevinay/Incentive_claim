@@ -7,7 +7,7 @@ from api.views import health_view, root_view
 
 urlpatterns = [
     path("api/", include("api.urls")),
-    path("health", health_view),
+    path("health", health_view),    
     path("", root_view),
 ]
 

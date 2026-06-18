@@ -19,8 +19,9 @@ Private internal platform for students, faculty, authorities, and admins to subm
 ## Local Setup
 
 ### 1) Database
+Create the database once:
 ```bash
-psql -U postgres -f backend/schema.sql
+psql -U postgres -c "CREATE DATABASE incentive_db;"
 ```
 
 ### 2) Backend
@@ -62,6 +63,12 @@ APP_QUERY_MAX_LIMIT=500
 RUN_STARTUP_LEGACY_REPAIR=false
 ```
 Only set this to `true` if you specifically need the one-time legacy review repair at startup.
+
+Apply the schema with Django migrations:
+```bash
+python manage.py migrate
+```
+If you already created the tables outside Django, you can usually switch over with `python manage.py migrate --fake-initial` the first time.
 
 Run backend:
 ```bash
@@ -107,7 +114,7 @@ For Gmail, `SMTP_PASSWORD` must be a Google App Password, not your regular Gmail
 ## Scalability Notes (100k Registered Users)
 - Authority and admin listing endpoints now support pagination and server-side search filters (`limit`, `offset`, `q`, role filters where applicable).
 - Default dashboard polling has been reduced and tied to active/visible tabs to cut unnecessary load.
-- Core DB indexes are applied in `backend/schema.sql` and startup schema updates.
+- Core DB indexes are defined in Django model metadata and applied through migrations.
 - For high traffic, tune DB pool and worker counts using the new `.env` settings above.
 
 ## Load Testing

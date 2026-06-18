@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 
 from django.db import models
+from django.db.models.functions import Lower
+from django.db.models.fields.json import KeyTextTransform
 
 
 class User(models.Model):
@@ -19,7 +21,9 @@ class User(models.Model):
 
     class Meta:
         db_table = "users"
-        managed = False
+        indexes = [
+            models.Index(fields=["role", "department"], name="ix_users_role_dept"),
+        ]
 
     @property
     def is_authenticated(self) -> bool:
@@ -49,7 +53,13 @@ class Application(models.Model):
 
     class Meta:
         db_table = "applications"
-        managed = False
+        indexes = [
+            models.Index(fields=["owner", "-created_at"], name="ix_app_owner_created"),
+            models.Index(fields=["status", "-created_at"], name="ix_app_status_created"),
+            models.Index(fields=["application_type", "-created_at"], name="ix_app_type_created"),
+            models.Index(fields=["-created_at"], name="ix_app_created_at"),
+            models.Index(Lower(KeyTextTransform("department", "data")), name="ix_app_dept_lower"),
+        ]
 
     def __str__(self) -> str:
         return f"Application {self.id}"
@@ -69,7 +79,9 @@ class Notification(models.Model):
 
     class Meta:
         db_table = "notifications"
-        managed = False
+        indexes = [
+            models.Index(fields=["user", "-created_at"], name="ix_notif_user_created"),
+        ]
 
     def __str__(self) -> str:
         return self.message
@@ -89,7 +101,6 @@ class Notice(models.Model):
 
     class Meta:
         db_table = "notices"
-        managed = False
 
     def __str__(self) -> str:
         return self.title
@@ -110,7 +121,9 @@ class LoginEvent(models.Model):
 
     class Meta:
         db_table = "login_events"
-        managed = False
+        indexes = [
+            models.Index(fields=["user", "-created_at"], name="ix_login_user_created"),
+        ]
 
 
 class EmailOtp(models.Model):
@@ -137,7 +150,10 @@ class EmailOtp(models.Model):
 
     class Meta:
         db_table = "email_otps"
-        managed = False
+        indexes = [
+            models.Index(fields=["email"], name="ix_otp_email"),
+            models.Index(fields=["email", "purpose", "-created_at"], name="ix_otp_email_purpose_crt"),
+        ]
 
 
 class PasswordResetRequest(models.Model):
@@ -156,7 +172,10 @@ class PasswordResetRequest(models.Model):
 
     class Meta:
         db_table = "password_reset_requests"
-        managed = False
+        indexes = [
+            models.Index(fields=["email"], name="ix_pr_email"),
+            models.Index(fields=["user", "-created_at"], name="ix_pr_user_created"),
+        ]
 
 
 class FormWindow(models.Model):
@@ -167,7 +186,6 @@ class FormWindow(models.Model):
 
     class Meta:
         db_table = "form_windows"
-        managed = False
 
 
 class Feedback(models.Model):
@@ -189,8 +207,9 @@ class Feedback(models.Model):
 
     class Meta:
         db_table = "feedbacks"
-        managed = False
+        indexes = [
+            models.Index(fields=["-created_at"], name="ix_fb_created_at"),
+        ]
 
     def __str__(self) -> str:
         return f"Feedback {self.id}"
-
