@@ -49,6 +49,7 @@ SMTP_FROM_EMAIL=your-sender@gmail.com
 SMTP_FROM_NAME=SBJIT NPTEL Reimburse
 SMTP_USE_TLS=true
 SMTP_USE_SSL=false
+PORT=8000
 OTP_EXPIRE_MINUTES=10
 OTP_RESEND_SECONDS=60
 OTP_LENGTH=6
@@ -72,8 +73,9 @@ If you already created the tables outside Django, you can usually switch over wi
 
 Run backend:
 ```bash
-python manage.py runserver 0.0.0.0:8000
+python manage.py runserver
 ```
+`PORT` is read from `backend/.env`. If `PORT` is not set, the server defaults to `8000`.
 Production run example:
 ```bash
 gunicorn portal_backend.wsgi:application --bind 0.0.0.0:8000
