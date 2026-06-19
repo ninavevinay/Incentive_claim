@@ -11,7 +11,7 @@ const galleryImages = [
   "/elearning/course-1.jpg"
 ];
 
-export default function AppFooter({ useElearningFooter = false }) {
+export default function AppFooter({ useElearningFooter = false, isDashboardRoute = false }) {
   const { user } = useAuth();
   const dashboardPath = getDashboardPathForUser(user);
   const quickLinks = user
@@ -28,7 +28,7 @@ export default function AppFooter({ useElearningFooter = false }) {
 
   if (!useElearningFooter) {
     return (
-      <footer className="mt-auto tpl-dashboard-footer app-chrome">
+      <footer className={`mt-auto tpl-dashboard-footer app-chrome ${isDashboardRoute ? "tpl-dashboard-footer--dashboard" : ""}`}>
         <div className="app-container">
           <div className="flex flex-col items-center justify-between gap-3 text-center sm:flex-row sm:text-left">
             <div className="flex items-center gap-3">

@@ -237,7 +237,10 @@ export default function App() {
           </Routes>
         </main>
 
-        <AppFooter useElearningFooter={isLandingRoute} />
+        <AppFooter
+          useElearningFooter={isLandingRoute}
+          isDashboardRoute={isDashboardRoute}
+        />
       </div>
     </AuthProvider>
   );

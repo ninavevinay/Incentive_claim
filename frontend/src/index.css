@@ -595,6 +595,12 @@ select:focus-visible, textarea:focus-visible {
   padding: 16px 20px;
 }
 
+@media (min-width: 1024px) {
+  .tpl-dashboard-footer--dashboard {
+    margin-left: var(--sidebar-width, 260px);
+  }
+}
+
 .tpl-public-footer-grid {
   display: grid;
   gap: 1.4rem;
