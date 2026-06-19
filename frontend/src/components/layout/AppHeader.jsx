@@ -131,11 +131,7 @@ export default function AppHeader({
               type="button"
               className="tpl-public-menu-btn"
               onClick={onToggleMobileMenu}
-              aria-label={
-                isDashboardRoute
-                  ? "Toggle menu"
-                  : "Toggle navigation"
-              }
+              aria-label={isDashboardRoute ? "Open dashboard menu" : "Toggle navigation"}
             >
               <svg
                 className="h-5 w-5"

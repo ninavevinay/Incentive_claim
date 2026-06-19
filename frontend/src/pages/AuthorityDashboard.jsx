@@ -1813,8 +1813,8 @@ export default function AuthorityDashboard() {
 
   return (
     <div className="dashboard-page" style={{background:"var(--bg-base)"}}>
-      <div className="page-container">
-        <div className="mb-4 flex items-center justify-between lg:hidden">
+      <div className="page-container" style={{maxWidth: "none"}}>
+        <div className="mb-4 lg:hidden">
           <div className="flex items-center gap-2">
             <div className="h-7 w-7 rounded-lg" style={{background:"var(--accent-gradient)"}}></div>
             <span className="text-base font-bold font-display" style={{color:"var(--text-primary)"}}>Authority Portal</span>

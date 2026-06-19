@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import {
   LayoutDashboard,
   FileText,
@@ -20,7 +21,8 @@ import {
   FolderOpen,
   Calendar,
   Circle,
-  Search
+  Search,
+  X
 } from "lucide-react";
 
 function getInitials(name) {
@@ -70,12 +72,41 @@ function getIcon(item) {
   return ICONS[item] || Circle;
 }
 
-export default function Sidebar({ items, active, onSelect, user, showToggle = false, onToggle }) {
+export default function Sidebar({
+  items,
+  active,
+  onSelect,
+  user,
+  showToggle = false,
+  onToggle
+}) {
   const initials = getInitials(user?.name);
   const roleLabel = formatRole(user?.role);
 
   return (
     <aside className="portal-sidebar">
+      {showToggle && (
+        <div className="shrink-0 border-b border-[color:var(--sidebar-border)] px-4 py-4">
+          <Link
+            to="/#home"
+            className="flex items-center gap-3 rounded-xl transition-colors hover:bg-[color:var(--sidebar-hover)]"
+            aria-label="Go to home"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[color:var(--sidebar-border)] bg-white shadow-sm">
+              <img src="/logo.jpg" alt="S.B. Jain Institute logo" className="h-full w-full object-contain" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[10px] font-bold uppercase tracking-[0.16em] text-[color:var(--primary-soft)]">
+                S.B. Jain Institute
+              </span>
+              <span className="block truncate text-sm font-semibold text-[color:var(--ink)]">
+                SBJIT NPTEL Reimburse
+              </span>
+            </span>
+          </Link>
+        </div>
+      )}
+
       <div className="shrink-0 border-b border-[color:var(--sidebar-border)] px-4 py-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[color:var(--sidebar-active)] text-sm font-bold text-[color:var(--primary)]">
@@ -91,8 +122,14 @@ export default function Sidebar({ items, active, onSelect, user, showToggle = fa
       <div className="flex shrink-0 items-center justify-between px-4 pt-3">
         <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[color:var(--sidebar-text-muted)]">Menu</div>
         {showToggle && onToggle && (
-          <button type="button" className="text-[10px] font-medium text-[color:var(--primary-soft)]" onClick={onToggle}>
-            Close
+          <button
+            type="button"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[color:var(--primary-soft)] transition-colors hover:bg-[color:var(--sidebar-hover)]"
+            onClick={onToggle}
+            aria-label="Close menu"
+          >
+            <X className="h-4 w-4" strokeWidth={2.5} />
+            <span className="sr-only">Close menu</span>
           </button>
         )}
       </div>

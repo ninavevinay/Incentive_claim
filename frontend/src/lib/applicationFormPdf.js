@@ -228,57 +228,45 @@ const buildBankRows = (data) => [
   ["Bank IFSC", toText(data?.bank_ifsc)]
 ];
 
-const buildAttachmentRows = (app, data) => {
-  const rows = [
-    ["Fee payment receipt", toText(data?.fee_receipt_file)],
-    ["Certificate from Certification Authority", toText(data?.certificate_file)],
-    ["Photograph (JPG)", toText(data?.photograph_file)]
-  ];
+const OFFICE_USE_ROLES = [
+  "Department Coordinator",
+  "Department HOD",
+  "Institution Coordinator"
+];
 
-  if (app?.application_type === "student") {
-    rows.push(["Bank Passbook / Cancelled Cheque", toText(data?.bank_passbook_file)]);
-  }
+const buildOfficeUseRows = () =>
+  OFFICE_USE_ROLES.map((role) => [role, "", "", ""]);
 
-  return rows;
-};
-
-const buildReviewRows = (reviews) => {
-  const reviewList = Array.isArray(reviews) ? reviews : [];
-  if (reviewList.length === 0) {
-    return [];
-  }
-  return reviewList.map((review) => [
-    toText(review?.role).replaceAll("_", " ").toUpperCase(),
-    toText(review?.action).toUpperCase(),
-    toText(review?.approved_amount),
-    toText(review?.remark),
-    toDateTimeText(review?.reviewed_at)
-  ]);
-};
-
-const drawReviewTable = (doc, autoTable, rows, cursorY, margin) => {
+const drawOfficeUseTable = (doc, autoTable, rows, cursorY, margin) => {
   autoTable(doc, {
     startY: cursorY,
     margin: { left: margin, right: margin },
-    head: [["Role", "Action", "Approved Amount", "Remark", "Reviewed On"]],
+    head: [["Role", "Action", "Remark", "Sign"]],
     body: rows,
     theme: "grid",
     styles: {
       font: "times",
-      fontSize: 8.6,
-      cellPadding: 3.8,
+      fontSize: 8.8,
+      cellPadding: 4,
       lineColor: BORDER_COLOR,
       lineWidth: 0.6,
       textColor: TEXT_COLOR,
       overflow: "linebreak",
-      valign: "middle"
+      valign: "middle",
+      minCellHeight: 28
     },
     headStyles: {
       fillColor: HEADER_COLOR,
       textColor: [255, 255, 255],
       fontStyle: "bold"
     },
-    alternateRowStyles: { fillColor: STRIPE_COLOR }
+    alternateRowStyles: { fillColor: STRIPE_COLOR },
+    columnStyles: {
+      0: { cellWidth: 170, fontStyle: "bold" },
+      1: { cellWidth: 120 },
+      2: { cellWidth: 140 },
+      3: { cellWidth: 101, halign: "center" }
+    }
   });
 
   return (doc.lastAutoTable?.finalY || cursorY) + 12;
@@ -327,8 +315,6 @@ export const exportApplicationFormPdf = async (app) => {
     drawSimpleSection("Bank Details", buildBankRows(data), 130);
   }
 
-  drawSimpleSection("Documents Attached", buildAttachmentRows(app, data), 130);
-
   cursorY = ensurePageSpace(doc, cursorY, 130, drawPageHeader);
   cursorY = drawSectionTitle(doc, `${sectionNumber}. Declaration`, cursorY, margin, pageWidth);
   cursorY = drawDeclarationBlock(doc, cursorY, margin, pageWidth, data?.declaration_accepted);
@@ -339,12 +325,9 @@ export const exportApplicationFormPdf = async (app) => {
   cursorY = drawApplicantSignatureBlock(doc, cursorY, margin, signatureImage);
   sectionNumber += 1;
 
-  const reviewRows = buildReviewRows(data?.reviews);
-  if (reviewRows.length > 0) {
-    cursorY = ensurePageSpace(doc, cursorY, 150, drawPageHeader);
-    cursorY = drawSectionTitle(doc, `${sectionNumber}. Office Use - Review Workflow`, cursorY, margin, pageWidth);
-    cursorY = drawReviewTable(doc, autoTable, reviewRows, cursorY, margin);
-  }
+  cursorY = ensurePageSpace(doc, cursorY, 150, drawPageHeader);
+  cursorY = drawSectionTitle(doc, `${sectionNumber}. Office Use`, cursorY, margin, pageWidth);
+  cursorY = drawOfficeUseTable(doc, autoTable, buildOfficeUseRows(), cursorY, margin);
 
   doc.save(`application-form-${app?.id || "applicant"}.pdf`);
 };

@@ -523,8 +523,8 @@ select:focus-visible, textarea:focus-visible {
 
 .tpl-public-header--dashboard .tpl-public-menu-btn {
   border-color: rgba(255, 255, 255, 0.2);
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--primary);
+  background: var(--paper-muted);
 }
 
 .tpl-public-menu-btn:hover {
@@ -533,8 +533,8 @@ select:focus-visible, textarea:focus-visible {
 }
 
 .tpl-public-header--dashboard .tpl-public-menu-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.3);
+  background: #e2e8f0;
+  border-color: var(--line-strong);
 }
 
 .tpl-public-mobile-nav-wrap {
