@@ -11,7 +11,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from rest_framework.exceptions import APIException, ValidationError
 
 
-MAX_UPLOAD_BYTES = 150 * 1024
+MAX_UPLOAD_BYTES = 500 * 1024
 PDF_UPLOAD_EXTENSIONS = {".pdf"}
 PDF_UPLOAD_CONTENT_TYPES = {"application/pdf"}
 SIGNATURE_UPLOAD_EXTENSIONS = {".jpg", ".jpeg", ".png"}
