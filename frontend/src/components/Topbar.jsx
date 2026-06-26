@@ -1,12 +1,30 @@
+import { useEffect, useState } from "react";
 import { Calendar, ShieldCheck } from "lucide-react";
 
-export default function Topbar({ title, subtitle, module = "Enterprise Portal" }) {
-  const today = new Intl.DateTimeFormat("en-IN", {
+const PORTAL_TIME_ZONE = "Asia/Kolkata";
+
+const formatPortalDateTime = (value) =>
+  new Intl.DateTimeFormat("en-IN", {
+    timeZone: PORTAL_TIME_ZONE,
     weekday: "short",
     day: "2-digit",
     month: "short",
-    year: "numeric"
-  }).format(new Date());
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true
+  }).format(value);
+
+export default function Topbar({ title, subtitle, module = "Enterprise Portal" }) {
+  const [portalNow, setPortalNow] = useState(() => formatPortalDateTime(new Date()));
+
+  useEffect(() => {
+    const tick = () => setPortalNow(formatPortalDateTime(new Date()));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   return (
     <div className="portal-topbar animate-fade">
@@ -27,9 +45,9 @@ export default function Topbar({ title, subtitle, module = "Enterprise Portal" }
             <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" strokeWidth={2.5} />
             Secure Session
           </div>
-          <div className="claim-pill gap-2 text-slate-600">
+          <div className="claim-pill gap-2 whitespace-nowrap text-slate-600">
             <Calendar className="h-3.5 w-3.5 text-slate-400" strokeWidth={2} />
-            {today}
+            {portalNow} IST
           </div>
         </div>
       </div>

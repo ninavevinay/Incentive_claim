@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from django.db import models
 from django.db.models.functions import Lower
 from django.db.models.fields.json import KeyTextTransform
+
+from .timeutils import portal_now
 
 
 class User(models.Model):
@@ -49,7 +49,7 @@ class Application(models.Model):
     status = models.CharField(max_length=64, default="submitted")
     approved_amount = models.FloatField(null=True, blank=True)
     data = models.JSONField(default=dict)
-    created_at = models.DateTimeField(default=datetime.utcnow)
+    created_at = models.DateTimeField(default=portal_now)
 
     class Meta:
         db_table = "applications"
@@ -75,7 +75,7 @@ class Notification(models.Model):
     )
     message = models.CharField(max_length=255)
     is_read = models.BooleanField(default=False)
-    created_at = models.DateTimeField(default=datetime.utcnow)
+    created_at = models.DateTimeField(default=portal_now)
 
     class Meta:
         db_table = "notifications"
@@ -97,7 +97,7 @@ class Notice(models.Model):
         related_name="notices",
         on_delete=models.CASCADE,
     )
-    created_at = models.DateTimeField(default=datetime.utcnow)
+    created_at = models.DateTimeField(default=portal_now)
 
     class Meta:
         db_table = "notices"
@@ -117,7 +117,7 @@ class LoginEvent(models.Model):
     email = models.CharField(max_length=255)
     ip_address = models.CharField(max_length=64)
     user_agent = models.CharField(max_length=255)
-    created_at = models.DateTimeField(default=datetime.utcnow)
+    created_at = models.DateTimeField(default=portal_now)
 
     class Meta:
         db_table = "login_events"
@@ -144,7 +144,7 @@ class EmailOtp(models.Model):
         on_delete=models.SET_NULL,
     )
     request_ip = models.CharField(max_length=64)
-    created_at = models.DateTimeField(default=datetime.utcnow)
+    created_at = models.DateTimeField(default=portal_now)
     expires_at = models.DateTimeField()
     used_at = models.DateTimeField(null=True, blank=True)
 
@@ -167,7 +167,7 @@ class PasswordResetRequest(models.Model):
     email = models.CharField(max_length=255)
     token = models.CharField(max_length=128, unique=True)
     request_ip = models.CharField(max_length=64)
-    created_at = models.DateTimeField(default=datetime.utcnow)
+    created_at = models.DateTimeField(default=portal_now)
     used_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -182,7 +182,7 @@ class FormWindow(models.Model):
     id = models.IntegerField(primary_key=True, default=1)
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
-    updated_at = models.DateTimeField(default=datetime.utcnow)
+    updated_at = models.DateTimeField(default=portal_now)
 
     class Meta:
         db_table = "form_windows"
@@ -203,7 +203,7 @@ class Feedback(models.Model):
     benefit_status = models.CharField(max_length=32, default="beneficial")
     message = models.CharField(max_length=1500)
     rating = models.IntegerField(null=True, blank=True)
-    created_at = models.DateTimeField(default=datetime.utcnow)
+    created_at = models.DateTimeField(default=portal_now)
 
     class Meta:
         db_table = "feedbacks"

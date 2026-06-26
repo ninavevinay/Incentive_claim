@@ -33,12 +33,44 @@ from .storage import (
     save_photograph_upload,
     save_upload,
 )
+from .timeutils import portal_datetime_iso, portal_now, portal_today
 
 
 DEFAULT_QUERY_LIMIT = settings.APP_QUERY_DEFAULT_LIMIT
 MAX_QUERY_LIMIT = settings.APP_QUERY_MAX_LIMIT
 REVIEW_SCAN_BATCH = 250
 REVIEW_SCAN_CAP = 10000
+COURSE_CATEGORY_OPTIONS = (
+    "ELITE",
+    "ELITE + SILVER",
+    "ELITE + GOLD",
+    "ELITE + SILVER + TOP 5%",
+    "ELITE + SILVER + TOP 2%",
+    "ELITE + SILVER + TOP 1%",
+    "ELITE + GOLD + TOP 5%",
+    "ELITE + GOLD + TOP 2%",
+    "ELITE + GOLD + TOP 1%",
+    "NPTEL SUPER STAR",
+    "NPTEL DISCIPLINE STAR",
+    "NPTEL DOMAIN SCHOLAR",
+    "NPTEL BELIEVER",
+    "NPTEL ENTHUSIAST",
+    "NPTEL MOTIVATED LEARNER",
+    "NPTEL EVANGELIST",
+    "NPTEL MEGASTARS",
+    "NPTEL CHAMPIONS",
+)
+NPTEL_STAR_CATEGORIES = {
+    "NPTEL SUPER STAR",
+    "NPTEL DISCIPLINE STAR",
+    "NPTEL DOMAIN SCHOLAR",
+    "NPTEL BELIEVER",
+    "NPTEL ENTHUSIAST",
+    "NPTEL MOTIVATED LEARNER",
+    "NPTEL EVANGELIST",
+    "NPTEL MEGASTARS",
+    "NPTEL CHAMPIONS",
+}
 
 AUTHORITY_ROLES = {"department_coordinator", "department_hod", "institution_coordinator"}
 SELF_REGISTER_ROLES = {"student", "faculty"}
@@ -56,25 +88,7 @@ STATUS_LABELS = {
     "approved": "Approved",
     "rejected": "Rejected",
 }
-ALLOWED_COURSE_CATEGORIES = {
-    # Accept both legacy Elite labels and the current NPTEL dropdown labels.
-    "ELITE",
-    "ELITE + SILVER",
-    "ELITE + GOLD",
-    "ELITE + SILVER + TOP 5%",
-    "ELITE + SILVER + TOP 2%",
-    "ELITE + SILVER + TOP 1%",
-    "ELITE + GOLD + TOP 5%",
-    "ELITE + GOLD + TOP 2%",
-    "ELITE + GOLD + TOP 1%",
-    "NPTEL SUPER STAR",
-    "NPTEL DISCIPLINE STAR",
-    "NPTEL DOMAIN SCHOLAR",
-    "NPTEL BELIEVER",
-    "NPTEL ENTHUSIAST",
-    "NPTEL MOTIVATED LEARNER",
-    "NPTEL EVANGELIST",
-}
+ALLOWED_COURSE_CATEGORIES = set(COURSE_CATEGORY_OPTIONS)
 ALLOWED_ACADEMIC_YEAR_TYPES = {"ODD", "EVEN"}
 APPLICATION_UPLOAD_FIELDS = (
     "fee_receipt_file",
@@ -110,6 +124,31 @@ def _norm(value: str | None) -> str:
     return str(value or "").strip().lower()
 
 
+def _required_form_value(data: dict, key: str, label: str):
+    value = data.get(key)
+    if value is None or value == "":
+        raise ValidationError(f"{label} is required")
+    return value
+
+
+def _required_upload_file(data: dict, key: str, label: str):
+    value = data.get(key)
+    if value is None or value == "":
+        raise ValidationError(f"{label} is required")
+    return value
+
+
+def _parse_form_bool(value, label: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    raise ValidationError(f"{label} must be true or false")
+
+
 def role_label(role: str) -> str:
     return ROLE_LABELS.get(role, role.replace("_", " ").title())
 
@@ -129,6 +168,16 @@ def required_upper_text(field_label: str, value: str | None) -> str:
     return text
 
 
+def required_academic_year(value: str | None) -> str:
+    academic_year = re.sub(r"\s+", " ", str(value or "").strip())
+    if not academic_year:
+        raise ValidationError("Academic year is required")
+    match = re.fullmatch(r"(\d{4})\s*[-/\u2013\u2014]\s*(\d{4})", academic_year)
+    if not match:
+        raise ValidationError("Academic year must be in YYYY - YYYY format")
+    return f"{match.group(1)} - {match.group(2)}"
+
+
 def required_email(value: str | None) -> str:
     email = normalize_email(value)
     if not email:
@@ -137,7 +186,7 @@ def required_email(value: str | None) -> str:
 
 
 def required_category(value: str | None) -> str:
-    category = required_upper_text("Course category", value)
+    category = re.sub(r"\s+", " ", required_upper_text("Course category", value))
     if category not in ALLOWED_COURSE_CATEGORIES:
         raise ValidationError("Invalid course category selected")
     return category
@@ -253,7 +302,7 @@ def request_registration_otp(payload: dict, request) -> dict:
     if not is_allowed_email(email):
         raise ValidationError(f"Only @{settings.ALLOWED_EMAIL_DOMAIN} email addresses are allowed")
 
-    now = datetime.utcnow()
+    now = portal_now()
     latest = _latest_pending_otp(email, purpose)
     if latest:
         resend_at = latest.created_at + timedelta(seconds=settings.OTP_RESEND_SECONDS)
@@ -308,7 +357,7 @@ def verify_registration_otp(payload: dict, request) -> str:
     if not record:
         raise ValidationError("OTP not found. Request a new OTP.")
 
-    now = datetime.utcnow()
+    now = portal_now()
     if record.expires_at < now:
         record.used_at = now
         record.save(update_fields=["used_at"])
@@ -373,7 +422,7 @@ def forgot_password_otp(payload: dict, request) -> dict:
             "resend_after_seconds": settings.OTP_RESEND_SECONDS,
         }
 
-    now = datetime.utcnow()
+    now = portal_now()
     latest = _latest_pending_otp(email, RESET_PASSWORD_PURPOSE)
     if latest:
         resend_at = latest.created_at + timedelta(seconds=settings.OTP_RESEND_SECONDS)
@@ -437,7 +486,7 @@ def reset_password_with_otp(payload: dict) -> dict:
     if not record:
         raise ValidationError("OTP not found. Request a new reset OTP.")
 
-    now = datetime.utcnow()
+    now = portal_now()
     if record.expires_at < now:
         record.used_at = now
         record.save(update_fields=["used_at"])
@@ -543,7 +592,7 @@ def enforce_form_window_open() -> None:
     window = FormWindow.objects.filter(id=1).first()
     if not window or window.start_date is None or window.end_date is None:
         return
-    today = datetime.utcnow().date()
+    today = portal_today()
     if today < window.start_date or today > window.end_date:
         raise PermissionDenied(
             f"Form filling is open only from {window.start_date.isoformat()} to {window.end_date.isoformat()}"
@@ -551,18 +600,45 @@ def enforce_form_window_open() -> None:
 
 
 def _normalize_upload_payload(applicant_name: str, data: dict, *, include_bank_passbook: bool, include_designation: bool) -> dict:
-    department = required_upper_text("Department", data["department"])
-    applicant_name = required_upper_text("Applicant name", data["applicant_name"])
-    mobile_number = required_upper_text("Mobile number", data["mobile_number"])
-    academic_year = required_upper_text("Academic year", data["academic_year"])
-    academic_year_type = required_academic_year_type(data["academic_year_type"])
-    email = required_email(data["email"])
-    course_platform = required_upper_text("Course platform", data["course_platform"])
-    course_title = required_upper_text("Course title", data["course_title"])
-    nptel_application_number = required_upper_text("NPTEL application number", data["nptel_application_number"])
-    course_session = required_upper_text("Course session", data["course_session"])
-    course_score = required_upper_text("Course score", data["course_score"])
-    course_category = required_category(data["course_category"])
+    department = required_upper_text("Department", _required_form_value(data, "department", "Department"))
+    applicant_name = required_upper_text("Applicant name", _required_form_value(data, "applicant_name", "Applicant name"))
+    mobile_number = required_upper_text("Mobile number", _required_form_value(data, "mobile_number", "Mobile number"))
+    academic_year = required_academic_year(_required_form_value(data, "academic_year", "Academic year"))
+    academic_year_type = required_academic_year_type(_required_form_value(data, "academic_year_type", "Academic year type"))
+    email = required_email(_required_form_value(data, "email", "Email"))
+    course_category = required_category(_required_form_value(data, "course_category", "Course category"))
+    requires_course_details = course_category not in NPTEL_STAR_CATEGORIES
+    requires_registration_details = requires_course_details
+
+    if requires_course_details:
+        course_platform = required_upper_text("Course platform", _required_form_value(data, "course_platform", "Course platform"))
+        course_title = required_upper_text("Course title", _required_form_value(data, "course_title", "Course title"))
+        nptel_application_number = required_upper_text(
+            "NPTEL application number",
+            _required_form_value(data, "nptel_application_number", "NPTEL application number"),
+        )
+        course_session = required_upper_text("Course session", _required_form_value(data, "course_session", "Course session"))
+        course_score = required_upper_text("Course score", _required_form_value(data, "course_score", "Course score"))
+        course_weeks = _required_form_value(data, "course_weeks", "Course weeks")
+        course_credits = _required_form_value(data, "course_credits", "Course credits")
+    else:
+        course_platform = None
+        course_title = None
+        nptel_application_number = None
+        course_session = None
+        course_score = None
+        course_weeks = None
+        course_credits = None
+
+    if requires_registration_details:
+        registration_fee_paid = _required_form_value(data, "registration_fee_paid", "Registration fee paid")
+        permissible_claim = _required_form_value(data, "permissible_claim", "Permissible claim")
+    else:
+        registration_fee_paid = None
+        permissible_claim = None
+    fee_receipt_file = _required_upload_file(data, "fee_receipt_file", "Fee receipt file") if requires_course_details else None
+    certificate_file = _required_upload_file(data, "certificate_file", "Certificate file")
+    photograph_file = _required_upload_file(data, "photograph_file", "Photograph file")
 
     payload = {
         "department": department,
@@ -571,20 +647,20 @@ def _normalize_upload_payload(applicant_name: str, data: dict, *, include_bank_p
         "academic_year": academic_year,
         "academic_year_type": academic_year_type,
         "email": email,
-        "incentive_claim_count": data["incentive_claim_count"],
+        "incentive_claim_count": _required_form_value(data, "incentive_claim_count", "Incentive claim count"),
         "course_platform": course_platform,
         "course_title": course_title,
         "nptel_application_number": nptel_application_number,
         "course_session": course_session,
-        "course_weeks": data["course_weeks"],
+        "course_weeks": course_weeks,
         "course_score": course_score,
         "course_category": course_category,
-        "course_credits": data["course_credits"],
-        "registration_fee_paid": data["registration_fee_paid"],
-        "permissible_claim": data["permissible_claim"],
-        "fee_receipt_file": save_upload(data["fee_receipt_file"], applicant_name, "fee_receipt"),
-        "certificate_file": save_upload(data["certificate_file"], applicant_name, "certificate"),
-        "photograph_file": save_photograph_upload(data["photograph_file"], applicant_name),
+        "course_credits": course_credits,
+        "registration_fee_paid": registration_fee_paid,
+        "permissible_claim": permissible_claim,
+        "fee_receipt_file": save_upload(fee_receipt_file, applicant_name, "fee_receipt"),
+        "certificate_file": save_upload(certificate_file, applicant_name, "certificate"),
+        "photograph_file": save_photograph_upload(photograph_file, applicant_name),
         "signature_file": save_upload(
             data.get("signature_file"),
             applicant_name,
@@ -593,24 +669,37 @@ def _normalize_upload_payload(applicant_name: str, data: dict, *, include_bank_p
             allowed_content_types=SIGNATURE_UPLOAD_CONTENT_TYPES,
             invalid_type_detail="Only JPG or PNG files are allowed for signature upload",
         ),
-        "declaration_accepted": bool(data["declaration_accepted"]),
+        "declaration_accepted": _parse_form_bool(
+            _required_form_value(data, "declaration_accepted", "Declaration acceptance"),
+            "Declaration acceptance",
+        ),
     }
 
     if include_bank_passbook:
         payload.update(
             {
-                "usn": required_upper_text("USN", data["usn"]),
-                "semester": required_upper_text("Semester", data["semester"]),
-                "bank_account_number": required_upper_text("Bank account number", data["bank_account_number"]),
-                "bank_ifsc": required_upper_text("Bank IFSC", data["bank_ifsc"]),
-                "bank_branch": required_upper_text("Bank branch", data["bank_branch"]),
-                "bank_name": required_upper_text("Bank name", data["bank_name"]),
-                "bank_passbook_file": save_upload(data["bank_passbook_file"], applicant_name, "bank_passbook"),
+                "usn": required_upper_text("USN", _required_form_value(data, "usn", "USN")),
+                "semester": required_upper_text("Semester", _required_form_value(data, "semester", "Semester")),
+                "bank_account_number": required_upper_text(
+                    "Bank account number",
+                    _required_form_value(data, "bank_account_number", "Bank account number"),
+                ),
+                "bank_ifsc": required_upper_text("Bank IFSC", _required_form_value(data, "bank_ifsc", "Bank IFSC")),
+                "bank_branch": required_upper_text(
+                    "Bank branch",
+                    _required_form_value(data, "bank_branch", "Bank branch"),
+                ),
+                "bank_name": required_upper_text("Bank name", _required_form_value(data, "bank_name", "Bank name")),
+                "bank_passbook_file": save_upload(
+                    _required_upload_file(data, "bank_passbook_file", "Bank passbook file"),
+                    applicant_name,
+                    "bank_passbook",
+                ),
             }
         )
 
     if include_designation:
-        payload["designation"] = required_upper_text("Designation", data["designation"])
+        payload["designation"] = required_upper_text("Designation", _required_form_value(data, "designation", "Designation"))
 
     return payload
 
@@ -620,7 +709,7 @@ def create_student_application(owner: User, data: dict) -> Application:
     if owner.role != "student":
         raise PermissionDenied("Only students can submit this form")
 
-    six_months_ago = datetime.utcnow() - timedelta(days=180)
+    six_months_ago = portal_now() - timedelta(days=180)
     recent_count = (
         Application.objects.filter(
             owner_id=owner.id,
@@ -669,7 +758,7 @@ def create_faculty_application(owner: User, data: dict) -> Application:
     if owner.role != "faculty":
         raise PermissionDenied("Only faculty can submit this form")
 
-    six_months_ago = datetime.utcnow() - timedelta(days=180)
+    six_months_ago = portal_now() - timedelta(days=180)
     recent_count = (
         Application.objects.filter(
             owner_id=owner.id,
@@ -855,7 +944,7 @@ def repair_legacy_review_history() -> int:
 
         status = app.status
         department = data.get("department")
-        reviewed_at = app.created_at.isoformat() if app.created_at else datetime.utcnow().isoformat()
+        reviewed_at = portal_datetime_iso(app.created_at) if app.created_at else portal_datetime_iso(portal_now())
         changed = False
 
         def ensure_review(role: str, action: str, remark: str | None = None) -> None:
@@ -1053,7 +1142,7 @@ def review_application_submission(application_id: int, reviewer: User, payload: 
             data["notification_approved_amount"] = approved_amount
             data["approved_by_role"] = role
             data["approved_by_user_id"] = reviewer.id
-            data["approved_at"] = datetime.utcnow().isoformat()
+            data["approved_at"] = portal_datetime_iso(portal_now())
 
         reviews = data.get("reviews") or []
         if not isinstance(reviews, list):
@@ -1065,7 +1154,7 @@ def review_application_submission(application_id: int, reviewer: User, payload: 
                 "reviewer_id": reviewer.id,
                 "remark": remark,
                 "approved_amount": approved_amount if (action == "approve" and role == "institution_coordinator") else None,
-                "reviewed_at": datetime.utcnow().isoformat(),
+                "reviewed_at": portal_datetime_iso(portal_now()),
             }
         )
         data["reviews"] = reviews

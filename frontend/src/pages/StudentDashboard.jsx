@@ -2,13 +2,21 @@ import { useEffect, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar.jsx";
 import DashboardMobileSidebar from "../components/DashboardMobileSidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
+import ApplicationDetailsPopup from "../components/ApplicationDetailsPopup.jsx";
 import SubmitStatusPopup from "../components/SubmitStatusPopup.jsx";
 import DangerConfirmPopup from "../components/DangerConfirmPopup.jsx";
 import { api } from "../lib/api.js";
 import { useAuth, logout } from "../lib/auth.jsx";
 import { getApprovedAmount, withNotificationAmounts } from "../lib/amount.js";
+import { formatAcademicYear, isAcademicYearFormat, normalizeAcademicYear } from "../lib/academicYear.js";
 import { exportApplicationFormPdf } from "../lib/applicationFormPdf.js";
 import { getStoredMenuSelection, setStoredMenuSelection } from "../lib/dashboardStorage.js";
+import {
+  COURSE_CATEGORY_OPTIONS,
+  normalizeCourseCategory,
+  shouldShowCourseDetails,
+  shouldShowRegistrationDetails
+} from "../lib/courseCategories.js";
 
 const menu = [
   "Application Form",
@@ -23,24 +31,6 @@ const DASHBOARD_FETCH_LIMIT = 60;
 const MAX_FILE_BYTES = 150 * 1024;
 const MAX_FILE_LABEL = "150KB";
 const ACTIVE_TAB_STORAGE_KEY = "incentive:student:active-tab";
-const CATEGORY_OPTIONS = [
-  "Elite",
-  "Elite + Silver",
-  "Elite + Gold",
-  "Elite + Silver + Top 5%",
-  "Elite + Silver + Top 2%",
-  "Elite + Silver + Top 1%",
-  "Elite + Gold + Top 5%",
-  "Elite + Gold + Top 2%",
-  "Elite + Gold + Top 1%",
-  "NPTEL Super Star",
-  "NPTEL Discipline Star",
-  "NPTEL Domain Scholar",
-  "NPTEL Believer",
-  "NPTEL Enthusiast",
-  "NPTEL Motivated Learner",
-  "NPTEL Evangelist"
-];
 
 export default function StudentDashboard() {
   const { user, setUser } = useAuth();
@@ -94,10 +84,13 @@ export default function StudentDashboard() {
     title: "",
     message: ""
   });
+  const [selectedApplication, setSelectedApplication] = useState(null);
   const [isSubmittingApplication, setIsSubmittingApplication] = useState(false);
   const submittingApplicationRef = useRef(false);
   const [applicationsNotice, setApplicationsNotice] = useState("");
   const [applicationsNoticeType, setApplicationsNoticeType] = useState("success");
+  const courseSectionsRef = useRef(null);
+  const previousCourseCategoryRef = useRef(form.courseCategory);
   const statusLabel = (status) => {
     switch (status) {
       case "pending_department_coordinator":
@@ -230,6 +223,12 @@ export default function StudentDashboard() {
 
   const toUpperText = (value) => String(value || "").toUpperCase();
   const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+  const hasDisplayText = (value) => {
+    const text = String(value ?? "").trim();
+    if (!text) return false;
+    const lowered = text.toLowerCase();
+    return text !== "-" && lowered !== "not provided" && lowered !== "n/a";
+  };
   const closeSubmitPopup = () => setSubmitPopup((prev) => ({ ...prev, open: false }));
   const showSubmitPopup = (type, popupMessage, title = "") => {
     setSubmitPopup({
@@ -239,6 +238,14 @@ export default function StudentDashboard() {
       message: popupMessage
     });
   };
+  const showCourseDetails = shouldShowCourseDetails(form.courseCategory);
+  const showRegistrationDetails = shouldShowRegistrationDetails(form.courseCategory);
+  useEffect(() => {
+    const previousCategory = previousCourseCategoryRef.current;
+    previousCourseCategoryRef.current = form.courseCategory;
+    if (!showCourseDetails || previousCategory === form.courseCategory) return;
+    courseSectionsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [form.courseCategory, showCourseDetails]);
   const viewApplicationsFromPopup = () => {
     closeSubmitPopup();
     setActive("My Applications");
@@ -253,6 +260,15 @@ export default function StudentDashboard() {
     const fixedDepartment = toUpperText(user?.department || form.department);
     const fixedApplicantName = toUpperText(user?.name || form.applicantName);
     const fixedEmail = normalizeEmail(user?.email || form.email);
+    const academicYear = normalizeAcademicYear(form.academicYear);
+    if (!normalizeCourseCategory(form.courseCategory)) {
+      showSubmitPopup("error", "Please select a course category before submitting.", "Category required");
+      return;
+    }
+    if (!isAcademicYearFormat(academicYear)) {
+      showSubmitPopup("error", "Academic year must be in 2023 - 2024 format.", "Academic year required");
+      return;
+    }
     const sixMonthsAgoMs = Date.now() - (180 * 24 * 60 * 60 * 1000);
     const recentStudentCount = apps.filter((app) => (
       app.application_type === "student" &&
@@ -264,7 +280,7 @@ export default function StudentDashboard() {
       return;
     }
     const oversizedFiles = [
-      form.feeReceiptFile,
+      ...(showCourseDetails ? [form.feeReceiptFile] : []),
       form.certificateFile,
       form.bankPassbookFile,
       form.photographFile
@@ -283,26 +299,30 @@ export default function StudentDashboard() {
     data.append("applicant_name", fixedApplicantName);
     data.append("usn", toUpperText(form.usn));
     data.append("mobile_number", toUpperText(form.mobileNumber));
-    data.append("academic_year", toUpperText(form.academicYear));
+    data.append("academic_year", academicYear);
     data.append("academic_year_type", toUpperText(form.academicYearType));
     data.append("semester", toUpperText(form.semester));
     data.append("email", fixedEmail);
     data.append("incentive_claim_count", String(form.incentiveClaimCount));
-    data.append("course_platform", toUpperText(form.coursePlatform));
-    data.append("course_title", toUpperText(form.courseTitle));
-    data.append("nptel_application_number", toUpperText(form.nptelApplicationNumber));
-    data.append("course_session", toUpperText(form.courseSession));
-    data.append("course_weeks", String(form.courseWeeks));
-    data.append("course_score", toUpperText(form.courseScore));
     data.append("course_category", toUpperText(form.courseCategory));
-    data.append("course_credits", String(form.courseCredits));
-    data.append("registration_fee_paid", String(form.registrationFeePaid));
-    data.append("permissible_claim", String(form.permissibleClaim));
     data.append("bank_account_number", toUpperText(form.bankAccountNumber));
     data.append("bank_ifsc", toUpperText(form.bankIfsc));
     data.append("bank_branch", toUpperText(form.bankBranch));
     data.append("bank_name", toUpperText(form.bankName));
-    if (form.feeReceiptFile) data.append("fee_receipt_file", form.feeReceiptFile);
+    if (showRegistrationDetails) {
+      data.append("registration_fee_paid", String(form.registrationFeePaid));
+      data.append("permissible_claim", String(form.permissibleClaim));
+    }
+    if (showCourseDetails) {
+      data.append("course_platform", toUpperText(form.coursePlatform));
+      data.append("course_title", toUpperText(form.courseTitle));
+      data.append("nptel_application_number", toUpperText(form.nptelApplicationNumber));
+      data.append("course_session", toUpperText(form.courseSession));
+      data.append("course_weeks", String(form.courseWeeks));
+      data.append("course_score", toUpperText(form.courseScore));
+      data.append("course_credits", String(form.courseCredits));
+      if (form.feeReceiptFile) data.append("fee_receipt_file", form.feeReceiptFile);
+    }
     if (form.certificateFile) data.append("certificate_file", form.certificateFile);
     if (form.bankPassbookFile) data.append("bank_passbook_file", form.bankPassbookFile);
     if (form.photographFile) data.append("photograph_file", form.photographFile);
@@ -488,7 +508,14 @@ export default function StudentDashboard() {
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year</label>
-                        <input className="input mt-2" value={form.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} required placeholder="eg., 2025-2026" />
+                        <input
+                          className="input mt-2"
+                          value={form.academicYear}
+                          onChange={(e) => setForm({ ...form, academicYear: e.target.value })}
+                          onBlur={(e) => setForm((prev) => ({ ...prev, academicYear: normalizeAcademicYear(e.target.value) }))}
+                          required
+                          placeholder="eg., 2023 - 2024"
+                        />
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year Type</label>
@@ -528,45 +555,6 @@ export default function StudentDashboard() {
                           ))}
                         </div>
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="form-section">
-                    <div className="form-section-header">
-                      <div className="form-section-title">Course Details</div>
-                      <div className="form-section-subtitle">Certification information</div>
-                    </div>
-                    <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Platform</label>
-                        <input className="input mt-2" placeholder="e.g., NPTEL, Coursera" value={form.coursePlatform} onChange={(e) => setForm({ ...form, coursePlatform: e.target.value })} required />
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Title of Course</label>
-                        <input className="input mt-2" placeholder="e.g., GenAI" value={form.courseTitle} onChange={(e) => setForm({ ...form, courseTitle: e.target.value })} required />
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">NPTEL Application Number</label>
-                        <input
-                          className="input mt-2 uppercase"
-                          value={form.nptelApplicationNumber}
-                          onChange={(e) => setForm({ ...form, nptelApplicationNumber: toUpperText(e.target.value) })}
-                          required
-                          placeholder="e.g., NPTEL-APP-12345"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Session</label>
-                        <input className="input mt-2" value={form.courseSession} onChange={(e) => setForm({ ...form, courseSession: e.target.value })} required placeholder="2025"/>
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Number of Weeks</label>
-                        <input className="input mt-2" type="number" min="1" value={form.courseWeeks} onChange={(e) => setForm({ ...form, courseWeeks: e.target.value })} required placeholder="eg., 4"/>
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Score</label>
-                        <input className="input mt-2" value={form.courseScore} onChange={(e) => setForm({ ...form, courseScore: e.target.value })} required placeholder="eg., 85%"/>
-                      </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Category</label>
                         <select
@@ -576,34 +564,79 @@ export default function StudentDashboard() {
                           required
                         >
                           <option value="" disabled>Select category</option>
-                          {CATEGORY_OPTIONS.map((option) => (
+                          {COURSE_CATEGORY_OPTIONS.map((option) => (
                             <option key={option} value={option}>{option}</option>
                           ))}
                         </select>
                       </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Credits</label>
-                        <input className="input mt-2" type="number" min="0" value={form.courseCredits} onChange={(e) => setForm({ ...form, courseCredits: e.target.value })} required placeholder="eg., 4"/>
-                      </div>
                     </div>
                   </div>
 
-                  <div className="form-section">
-                    <div className="form-section-header">
-                      <div className="form-section-title">Registration Details</div>
-                      <div className="form-section-subtitle">Fee + claim</div>
-                    </div>
-                    <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Registration Fee Paid (Rs)</label>
-                        <input className="input mt-2" type="number" min="0" value={form.registrationFeePaid} onChange={(e) => setForm({ ...form, registrationFeePaid: e.target.value })} required placeholder="eg., 1000"/>
+                  {showCourseDetails && (
+                    <div ref={courseSectionsRef} className="space-y-5">
+                      <div className="form-section">
+                        <div className="form-section-header">
+                          <div className="form-section-title">Course Details</div>
+                          <div className="form-section-subtitle">Certification information</div>
+                        </div>
+                        <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+                          <div>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Platform</label>
+                            <input className="input mt-2" placeholder="e.g., NPTEL, Coursera" value={form.coursePlatform} onChange={(e) => setForm({ ...form, coursePlatform: e.target.value })} required />
+                          </div>
+                          <div>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Title of Course</label>
+                            <input className="input mt-2" placeholder="e.g., GenAI" value={form.courseTitle} onChange={(e) => setForm({ ...form, courseTitle: e.target.value })} required />
+                          </div>
+                          <div>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">NPTEL Application Number</label>
+                            <input
+                              className="input mt-2 uppercase"
+                              value={form.nptelApplicationNumber}
+                              onChange={(e) => setForm({ ...form, nptelApplicationNumber: toUpperText(e.target.value) })}
+                              required
+                              placeholder="e.g., NPTEL-APP-12345"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Session</label>
+                            <input className="input mt-2" value={form.courseSession} onChange={(e) => setForm({ ...form, courseSession: e.target.value })} required placeholder="2025"/>
+                          </div>
+                          <div>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Number of Weeks</label>
+                            <input className="input mt-2" type="number" min="1" value={form.courseWeeks} onChange={(e) => setForm({ ...form, courseWeeks: e.target.value })} required placeholder="eg., 4"/>
+                          </div>
+                          <div>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Score</label>
+                            <input className="input mt-2" value={form.courseScore} onChange={(e) => setForm({ ...form, courseScore: e.target.value })} required placeholder="eg., 85%"/>
+                          </div>
+                          <div>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Credits</label>
+                            <input className="input mt-2" type="number" min="0" value={form.courseCredits} onChange={(e) => setForm({ ...form, courseCredits: e.target.value })} required placeholder="eg., 4"/>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Permissible Claim (Rs)</label>
-                        <input className="input mt-2" type="number" min="0" value={form.permissibleClaim} onChange={(e) => setForm({ ...form, permissibleClaim: e.target.value })} required placeholder="eg., 500"/>
+                    </div>
+                  )}
+
+                  {showRegistrationDetails && (
+                    <div className="form-section">
+                      <div className="form-section-header">
+                        <div className="form-section-title">Registration Details</div>
+                        <div className="form-section-subtitle">Fee + claim</div>
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <div>
+                          <label className="text-xs uppercase tracking-[0.2em] text-black/40">Registration Fee Paid (Rs)</label>
+                          <input className="input mt-2" type="number" min="0" value={form.registrationFeePaid} onChange={(e) => setForm({ ...form, registrationFeePaid: e.target.value })} required placeholder="eg., 1000"/>
+                        </div>
+                        <div>
+                          <label className="text-xs uppercase tracking-[0.2em] text-black/40">Permissible Claim (Rs)</label>
+                          <input className="input mt-2" type="number" min="0" value={form.permissibleClaim} onChange={(e) => setForm({ ...form, permissibleClaim: e.target.value })} required placeholder="eg., 500"/>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="form-section">
                     <div className="form-section-header">
@@ -636,17 +669,19 @@ export default function StudentDashboard() {
                       <div className="form-section-subtitle">Upload proofs</div>
                     </div>
                     <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Fee Payment Receipt (Max 150KB)</label>
-                        <input
-                          className="input mt-2"
-                          type="file"
-                          accept=".pdf,application/pdf"
-                          onChange={(e) => setForm({ ...form, feeReceiptFile: e.target.files?.[0] || null })}
-                          required
-                        />
-                        {form.feeReceiptFile && <div className="muted mt-1 text-xs">{form.feeReceiptFile?.name}</div>}
-                      </div>
+                      {showCourseDetails && (
+                        <div>
+                          <label className="text-xs uppercase tracking-[0.2em] text-black/40">Fee Payment Receipt (Max 150KB)</label>
+                          <input
+                            className="input mt-2"
+                            type="file"
+                            accept=".pdf,application/pdf"
+                            onChange={(e) => setForm({ ...form, feeReceiptFile: e.target.files?.[0] || null })}
+                            required
+                          />
+                          {form.feeReceiptFile && <div className="muted mt-1 text-xs">{form.feeReceiptFile?.name}</div>}
+                        </div>
+                      )}
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Certificate From Certification Authority (Max 150KB)</label>
                         <input
@@ -797,23 +832,37 @@ export default function StudentDashboard() {
                       })}
                     </div>
                     <div className="mt-4 grid gap-3 text-sm text-black/70 md:grid-cols-2">
-                      <div><span className="text-black/50">USN:</span> {app.data.usn || "-"}</div>
-                      <div><span className="text-black/50">Department:</span> {app.data.department || "-"}</div>
-                      <div><span className="text-black/50">Email:</span> {app.data.email || "-"}</div>
-                      <div><span className="text-black/50">Mobile:</span> {app.data.mobile_number || "-"}</div>
-                      <div><span className="text-black/50">Semester:</span> {app.data.semester || "-"}</div>
-                      <div><span className="text-black/50">Academic Year:</span> {app.data.academic_year || "-"}</div>
-                      <div><span className="text-black/50">Academic Year Type:</span> {app.data.academic_year_type || "-"}</div>
-                      <div><span className="text-black/50">Course:</span> {app.data.course_title || "-"}</div>
-                      <div><span className="text-black/50">NPTEL Application No:</span> {app.data.nptel_application_number || "-"}</div>
-                      <div><span className="text-black/50">Platform:</span> {app.data.course_platform || "-"}</div>
-                      <div><span className="text-black/50">Score:</span> {app.data.course_score || "-"}</div>
-                      <div><span className="text-black/50">Credits:</span> {app.data.course_credits ?? "-"}</div>
-                      <div><span className="text-black/50">Fee Paid:</span> {app.data.registration_fee_paid ?? "-"}</div>
-                      <div><span className="text-black/50">Permissible Claim:</span> {app.data.permissible_claim ?? "-"}</div>
-                      <div><span className="text-black/50">Approved Amount:</span> {getApprovedAmount(app)}</div>
+                      {[
+                        ["USN", app.data.usn],
+                        ["Department", app.data.department],
+                        ["Email", app.data.email],
+                        ["Mobile", app.data.mobile_number],
+                        ["Semester", app.data.semester],
+                        ["Academic Year", formatAcademicYear(app.data.academic_year, "")],
+                        ["Academic Year Type", app.data.academic_year_type],
+                        ["Course", app.data.course_title],
+                        ["Category", app.data.course_category],
+                        ["NPTEL Application No", app.data.nptel_application_number],
+                        ["Platform", app.data.course_platform],
+                        ["Score", app.data.course_score],
+                        ["Credits", app.data.course_credits],
+                        ["Fee Paid", app.data.registration_fee_paid],
+                        ["Permissible Claim", app.data.permissible_claim],
+                        ["Approved Amount", getApprovedAmount(app)]
+                      ]
+                        .filter(([, value]) => hasDisplayText(value))
+                        .map(([label, value]) => (
+                          <div key={label}>
+                            <span className="text-black/50">{label}:</span> {value}
+                          </div>
+                        ))}
                     </div>
                     <div className="mt-4 flex flex-wrap justify-end gap-2">
+                      {app.status === "approved" && (
+                        <button className="btn btn-primary" type="button" onClick={() => setSelectedApplication(app)}>
+                          Application Details
+                        </button>
+                      )}
                       <button className="btn btn-ghost" type="button" onClick={() => printApplicationForm(app)}>
                         Print Form PDF
                       </button>
@@ -1008,6 +1057,12 @@ export default function StudentDashboard() {
         message={submitPopup.message}
         onClose={closeSubmitPopup}
         onViewApplications={submitPopup.type === "success" ? viewApplicationsFromPopup : undefined}
+      />
+
+      <ApplicationDetailsPopup
+        open={Boolean(selectedApplication)}
+        application={selectedApplication}
+        onClose={() => setSelectedApplication(null)}
       />
 
       <DangerConfirmPopup

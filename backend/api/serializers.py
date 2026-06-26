@@ -14,6 +14,13 @@ from .models import (
     User,
 )
 from .routing import dashboard_path_for_user, slugify_department
+from .timeutils import portal_datetime_iso
+
+
+class PortalDateTimeField(serializers.DateTimeField):
+    def to_representation(self, value):
+        iso_value = portal_datetime_iso(value)
+        return iso_value if iso_value is not None else None
 
 
 class TokenResponseSerializer(serializers.Serializer):
@@ -90,17 +97,17 @@ class ApplicationSubmissionBaseSerializer(serializers.Serializer):
     academic_year_type = serializers.CharField(max_length=10)
     email = serializers.EmailField()
     incentive_claim_count = serializers.IntegerField()
-    course_platform = serializers.CharField(max_length=120)
-    course_title = serializers.CharField(max_length=255)
-    nptel_application_number = serializers.CharField(max_length=120)
-    course_session = serializers.CharField(max_length=120)
-    course_weeks = serializers.IntegerField()
-    course_score = serializers.CharField(max_length=120)
+    course_platform = serializers.CharField(max_length=120, required=False, allow_blank=True, allow_null=True)
+    course_title = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+    nptel_application_number = serializers.CharField(max_length=120, required=False, allow_blank=True, allow_null=True)
+    course_session = serializers.CharField(max_length=120, required=False, allow_blank=True, allow_null=True)
+    course_weeks = serializers.IntegerField(required=False, allow_null=True)
+    course_score = serializers.CharField(max_length=120, required=False, allow_blank=True, allow_null=True)
     course_category = serializers.CharField(max_length=120)
-    course_credits = serializers.IntegerField()
-    registration_fee_paid = serializers.FloatField()
-    permissible_claim = serializers.FloatField()
-    fee_receipt_file = serializers.FileField()
+    course_credits = serializers.IntegerField(required=False, allow_null=True)
+    registration_fee_paid = serializers.FloatField(required=False, allow_null=True)
+    permissible_claim = serializers.FloatField(required=False, allow_null=True)
+    fee_receipt_file = serializers.FileField(required=False, allow_null=True)
     certificate_file = serializers.FileField()
     photograph_file = serializers.FileField()
     signature_file = serializers.FileField(required=False, allow_null=True)
@@ -128,6 +135,8 @@ class ApplicationReviewSerializer(serializers.Serializer):
 
 
 class ApplicationOutSerializer(serializers.ModelSerializer):
+    created_at = PortalDateTimeField()
+
     class Meta:
         model = Application
         fields = ("id", "application_type", "status", "approved_amount", "data", "created_at")
@@ -140,7 +149,7 @@ class PublicApprovedHighlightOutSerializer(serializers.Serializer):
     course_category = serializers.CharField()
     percentage = serializers.CharField()
     photograph_file = serializers.CharField()
-    created_at = serializers.DateTimeField()
+    created_at = PortalDateTimeField()
 
 
 class AdminUserOutSerializer(serializers.ModelSerializer):
@@ -150,12 +159,17 @@ class AdminUserOutSerializer(serializers.ModelSerializer):
 
 
 class LoginEventOutSerializer(serializers.ModelSerializer):
+    created_at = PortalDateTimeField()
+
     class Meta:
         model = LoginEvent
         fields = ("id", "user_id", "email", "ip_address", "user_agent", "created_at")
 
 
 class PasswordResetOutSerializer(serializers.ModelSerializer):
+    created_at = PortalDateTimeField()
+    used_at = PortalDateTimeField()
+
     class Meta:
         model = PasswordResetRequest
         fields = ("id", "user_id", "email", "token", "request_ip", "created_at", "used_at")
@@ -180,6 +194,8 @@ class AdminFormWindowUpdateSerializer(serializers.Serializer):
 
 
 class AdminFeedbackOutSerializer(serializers.ModelSerializer):
+    created_at = PortalDateTimeField()
+
     class Meta:
         model = Feedback
         fields = (
@@ -207,6 +223,8 @@ class FeedbackCreateSerializer(serializers.Serializer):
 
 
 class FeedbackOutSerializer(serializers.ModelSerializer):
+    created_at = PortalDateTimeField()
+
     class Meta:
         model = Feedback
         fields = (
@@ -224,6 +242,8 @@ class FeedbackOutSerializer(serializers.ModelSerializer):
 
 
 class NoticeOutSerializer(serializers.ModelSerializer):
+    created_at = PortalDateTimeField()
+
     class Meta:
         model = Notice
         fields = ("id", "title", "file_path", "created_at")
@@ -235,6 +255,8 @@ class NoticeCreateSerializer(serializers.Serializer):
 
 
 class NotificationOutSerializer(serializers.ModelSerializer):
+    created_at = PortalDateTimeField()
+
     class Meta:
         model = Notification
         fields = ("id", "message", "is_read", "created_at")
@@ -247,7 +269,8 @@ class AdminUserBriefSerializer(serializers.ModelSerializer):
 
 
 class FormWindowRecordSerializer(serializers.ModelSerializer):
+    updated_at = PortalDateTimeField()
+
     class Meta:
         model = FormWindow
         fields = ("start_date", "end_date", "updated_at")
-

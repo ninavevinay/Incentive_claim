@@ -3,12 +3,13 @@ from __future__ import annotations
 import os
 import re
 import uuid
-from datetime import datetime
 from pathlib import Path
 
 from django.conf import settings
 from PIL import Image, ImageOps, UnidentifiedImageError
 from rest_framework.exceptions import APIException, ValidationError
+
+from .timeutils import portal_now
 
 
 MAX_UPLOAD_BYTES = 500 * 1024
@@ -77,7 +78,7 @@ def save_upload(
 
     applicant_token = _safe_filename_token(applicant_name, "applicant")
     field_token = _safe_filename_token(field_name, "document")
-    stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    stamp = portal_now().strftime("%Y%m%d%H%M%S")
     unique_suffix = uuid.uuid4().hex[:8]
     name = f"{applicant_token}_{field_token}_{stamp}_{unique_suffix}{final_extension}"
 

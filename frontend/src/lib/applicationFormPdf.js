@@ -1,4 +1,5 @@
 import { getApprovedAmount } from "./amount.js";
+import { formatAcademicYear } from "./academicYear.js";
 import { resolveMediaUrl } from "./api.js";
 import { drawPdfHeader, getPdfHeaderImageDataUrl } from "./pdfHeader.js";
 
@@ -52,10 +53,23 @@ const toDateTimeText = (value) => {
 };
 
 const toMoneyText = (value) => {
+  if (value === null || value === undefined) return "-";
+  const rawText = String(value).trim();
+  if (!rawText) return "-";
   const numberValue = Number(value);
   if (!Number.isFinite(numberValue)) return toText(value);
   return numberValue.toFixed(2);
 };
+
+const isPrintableValue = (value) => {
+  const text = String(value ?? "").trim();
+  if (!text) return false;
+  const lowered = text.toLowerCase();
+  return text !== "-" && lowered !== "not provided" && lowered !== "n/a";
+};
+
+const filterPrintableRows = (rows) =>
+  rows.filter((row) => Array.isArray(row) && row.length >= 2 && isPrintableValue(row[1]));
 
 const ensurePageSpace = (doc, cursorY, requiredSpace, drawPageHeader) => {
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -181,7 +195,7 @@ const buildApplicantRows = (app, data) => {
   const isStudent = app?.application_type === "student";
 
   const rows = [
-    ["Academic Year", toText(data?.academic_year)],
+    ["Academic Year", formatAcademicYear(data?.academic_year, "-")],
     ["Academic Year Type (ODD / EVEN)", toText(data?.academic_year_type)],
     ["Department", toText(data?.department)],
     ["Applicant Name (Surname First)", toText(data?.applicant_name)],
@@ -201,32 +215,35 @@ const buildApplicantRows = (app, data) => {
     toText(data?.incentive_claim_count)
   ]);
 
-  return rows;
+  return filterPrintableRows(rows);
 };
 
-const buildCourseRows = (data) => [
-  ["Platform", toText(data?.course_platform)],
-  ["Title of Course", toText(data?.course_title)],
-  ["NPTEL Application Number", toText(data?.nptel_application_number)],
-  ["Session", toText(data?.course_session)],
-  ["Number of Weeks", toText(data?.course_weeks)],
-  ["Score (%)", toText(data?.course_score)],
-  ["Category", toText(data?.course_category)],
-  ["Credits", toText(data?.course_credits)]
-];
+const buildCourseRows = (data) =>
+  filterPrintableRows([
+    ["Platform", toText(data?.course_platform)],
+    ["Title of Course", toText(data?.course_title)],
+    ["NPTEL Application Number", toText(data?.nptel_application_number)],
+    ["Session", toText(data?.course_session)],
+    ["Number of Weeks", toText(data?.course_weeks)],
+    ["Score (%)", toText(data?.course_score)],
+    ["Category", toText(data?.course_category)],
+    ["Credits", toText(data?.course_credits)]
+  ]);
 
-const buildFinancialRows = (app, data) => [
-  ["Registration Fee paid for Certification Course (Rs)", toMoneyText(data?.registration_fee_paid)],
-  ["Permissible Claim as per policy (Rs)", toMoneyText(data?.permissible_claim)],
-  ["Approved Amount (Rs)", toText(getApprovedAmount(app))]
-];
+const buildFinancialRows = (app, data) =>
+  filterPrintableRows([
+    ["Registration Fee paid for Certification Course (Rs)", toMoneyText(data?.registration_fee_paid)],
+    ["Permissible Claim as per policy (Rs)", toMoneyText(data?.permissible_claim)],
+    ["Approved Amount (Rs)", toText(getApprovedAmount(app))]
+  ]);
 
-const buildBankRows = (data) => [
-  ["Bank Account Number", toText(data?.bank_account_number)],
-  ["Bank Name", toText(data?.bank_name)],
-  ["Bank Branch", toText(data?.bank_branch)],
-  ["Bank IFSC", toText(data?.bank_ifsc)]
-];
+const buildBankRows = (data) =>
+  filterPrintableRows([
+    ["Bank Account Number", toText(data?.bank_account_number)],
+    ["Bank Name", toText(data?.bank_name)],
+    ["Bank Branch", toText(data?.bank_branch)],
+    ["Bank IFSC", toText(data?.bank_ifsc)]
+  ]);
 
 const OFFICE_USE_ROLES = [
   "Department Coordinator",
@@ -301,10 +318,12 @@ export const exportApplicationFormPdf = async (app) => {
   let sectionNumber = 1;
 
   const drawSimpleSection = (title, rows, requiredSpace = 150) => {
+    if (!rows || rows.length === 0) return false;
     cursorY = ensurePageSpace(doc, cursorY, requiredSpace, drawPageHeader);
     cursorY = drawSectionTitle(doc, `${sectionNumber}. ${title}`, cursorY, margin, pageWidth);
     cursorY = drawTwoColumnTable(doc, autoTable, rows, cursorY, margin, pageWidth);
     sectionNumber += 1;
+    return true;
   };
 
   drawSimpleSection("Applicant's Details", buildApplicantRows(app, data), 140);

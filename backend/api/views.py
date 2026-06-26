@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from html import escape
 from pathlib import Path
 import mimetypes
@@ -76,6 +75,7 @@ from .workflow import (
 )
 from .workflow import APPLICATION_UPLOAD_FIELDS
 from .workflow import _norm as _normalized
+from .timeutils import portal_now
 
 
 def _parse_int_param(raw_value, default: int, minimum: int, maximum: int) -> int:
@@ -235,7 +235,7 @@ def update_me(request):
 def delete_me(request):
     user = request.user
     user.is_active = False
-    user.deleted_at = datetime.utcnow()
+    user.deleted_at = portal_now()
     user.save(update_fields=["is_active", "deleted_at"])
     return Response({"message": "Account deactivated"})
 
@@ -263,7 +263,7 @@ def profile_me_endpoint(request):
 
     user = request.user
     user.is_active = False
-    user.deleted_at = datetime.utcnow()
+    user.deleted_at = portal_now()
     user.save(update_fields=["is_active", "deleted_at"])
     return Response({"message": "Account deactivated"})
 
@@ -735,7 +735,7 @@ def admin_set_form_window(request):
         window, _ = FormWindow.objects.get_or_create(id=1, defaults={})
         window.start_date = start_date
         window.end_date = end_date
-        window.updated_at = datetime.utcnow()
+        window.updated_at = portal_now()
         window.save()
 
         applicant_users = User.objects.filter(role__in=["student", "faculty"]).all()
@@ -779,7 +779,7 @@ def admin_form_window_endpoint(request):
         window, _ = FormWindow.objects.get_or_create(id=1, defaults={})
         window.start_date = start_date
         window.end_date = end_date
-        window.updated_at = datetime.utcnow()
+        window.updated_at = portal_now()
         window.save()
 
         applicant_users = User.objects.filter(role__in=["student", "faculty"]).all()
@@ -874,7 +874,7 @@ def coordinator_delete_authority_user(request, user_id: int):
         return Response({"message": "Authority user already deactivated"})
 
     target.is_active = False
-    target.deleted_at = datetime.utcnow()
+    target.deleted_at = portal_now()
     target.save(update_fields=["is_active", "deleted_at"])
     return Response({"message": "Authority user deactivated. Record retained in database."})
 
@@ -898,7 +898,7 @@ def coordinator_set_authority_user_status(request, user_id: int):
         return Response({"message": f"Authority user already {state}", "is_active": target.is_active})
 
     target.is_active = is_active
-    target.deleted_at = None if is_active else datetime.utcnow()
+    target.deleted_at = None if is_active else portal_now()
     target.save(update_fields=["is_active", "deleted_at"])
     action = "activated" if is_active else "deactivated"
     return Response({"message": f"Authority user {action}.", "is_active": target.is_active})

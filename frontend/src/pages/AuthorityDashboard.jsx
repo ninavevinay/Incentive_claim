@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar.jsx";
 import DashboardMobileSidebar from "../components/DashboardMobileSidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
+import ApplicationDetailsPopup from "../components/ApplicationDetailsPopup.jsx";
 import DangerConfirmPopup from "../components/DangerConfirmPopup.jsx";
 import { api, resolveMediaUrl } from "../lib/api.js";
 import { useAuth, logout } from "../lib/auth.jsx";
 import { getApprovedAmount, getInstitutionCoordinatorApprovedAmount } from "../lib/amount.js";
+import { formatAcademicYear } from "../lib/academicYear.js";
 import { drawPdfHeader, getPdfHeaderImageDataUrl } from "../lib/pdfHeader.js";
 import { DashboardSkeleton } from "../components/Skeleton.jsx";
 import { getStoredMenuSelection, setStoredMenuSelection } from "../lib/dashboardStorage.js";
@@ -93,15 +95,29 @@ const toReportLabel = (value, fallback = "Not Provided") => {
   return text || fallback;
 };
 
-const toAcademicYearType = (value) => {
-  const normalized = String(value ?? "").trim().toUpperCase();
-  if (normalized === "ODD") return "ODD";
-  if (normalized === "EVEN") return "EVEN";
-  return "Not Provided";
+  const toAcademicYearType = (value) => {
+    const normalized = String(value ?? "").trim().toUpperCase();
+    if (normalized === "ODD") return "ODD";
+    if (normalized === "EVEN") return "EVEN";
+    return "Not Provided";
+  };
+
+const isDisplayValue = (value) => {
+  const text = String(value ?? "").trim();
+  if (!text) return false;
+  const lowered = text.toLowerCase();
+  return text !== "-" && lowered !== "not provided" && lowered !== "n/a";
+};
+
+const hasDisplayText = (value) => {
+  const text = String(value ?? "").trim();
+  if (!text) return false;
+  const lowered = text.toLowerCase();
+  return text !== "-" && lowered !== "not provided" && lowered !== "n/a";
 };
 
 const toAcademicYearAndTypeLabel = (academicYearValue, academicYearTypeValue) => {
-  const yearLabel = toReportLabel(academicYearValue, "Not Provided");
+  const yearLabel = formatAcademicYear(academicYearValue, "Not Provided");
   const yearTypeLabel = toAcademicYearType(academicYearTypeValue);
   if (yearTypeLabel === "Not Provided") return yearLabel;
   return `${yearLabel} (${yearTypeLabel})`;
@@ -201,6 +217,7 @@ export default function AuthorityDashboard() {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState("");
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [selectedApprovedApplication, setSelectedApprovedApplication] = useState(null);
   const [rejectRemarks, setRejectRemarks] = useState({});
   const [approveAmounts, setApproveAmounts] = useState({});
   const [reportChartType, setReportChartType] = useState("pie");
@@ -457,7 +474,7 @@ export default function AuthorityDashboard() {
 
   const approvedByMeApps = mergeById(myApprovedApps, localApprovedByMeApps);
   const approvedByMeYearOptions = Array.from(
-    new Set(approvedByMeApps.map((app) => toReportLabel(app?.data?.academic_year, "Not Provided")))
+    new Set(approvedByMeApps.map((app) => formatAcademicYear(app?.data?.academic_year, "Not Provided")))
   ).sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: "base" }));
   const approvedByMeYearTypeOptions = Array.from(
     new Set(approvedByMeApps.map((app) => toAcademicYearType(app?.data?.academic_year_type)))
@@ -466,7 +483,7 @@ export default function AuthorityDashboard() {
     new Set(approvedByMeApps.map((app) => toReportLabel(app?.data?.department, "Not Provided")))
   ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
   const filteredApprovedByMeApps = approvedByMeApps.filter((app) => {
-    const appYear = toReportLabel(app?.data?.academic_year, "Not Provided");
+    const appYear = formatAcademicYear(app?.data?.academic_year, "Not Provided");
     const appYearType = toAcademicYearType(app?.data?.academic_year_type);
     const appDepartment = toReportLabel(app?.data?.department, "Not Provided");
     const yearPass = reportApprovedYearFilter === "all" || appYear === reportApprovedYearFilter;
@@ -528,7 +545,7 @@ export default function AuthorityDashboard() {
       applicant: data.applicant_name || data.application_name || "-",
       type: app.application_type || "-",
       department: data.department || "-",
-      academicYear: toReportLabel(data.academic_year, "Not Provided"),
+      academicYear: formatAcademicYear(data.academic_year, "Not Provided"),
       courseCategory: toReportLabel(data.course_category, "Not Provided"),
       mobile: data.mobile_number || "-",
       email: data.email || "-",
@@ -543,7 +560,7 @@ export default function AuthorityDashboard() {
   const lastYear = currentYear - 1;
   const yearWiseSummaryMap = new Map();
   scopedAllApps.forEach((app) => {
-    const year = toReportLabel(app?.data?.academic_year, "Not Provided");
+    const year = formatAcademicYear(app?.data?.academic_year, "Not Provided");
     if (!yearWiseSummaryMap.has(year)) {
       yearWiseSummaryMap.set(year, {
         year,
@@ -583,7 +600,7 @@ export default function AuthorityDashboard() {
   const selectedYearLabel = reportYearFilter === "all" ? "All Academic Years" : reportYearFilter;
   const yearFilteredApps = reportYearFilter === "all"
     ? scopedAllApps
-    : scopedAllApps.filter((app) => toReportLabel(app?.data?.academic_year, "Not Provided") === reportYearFilter);
+    : scopedAllApps.filter((app) => formatAcademicYear(app?.data?.academic_year, "Not Provided") === reportYearFilter);
   const selectedYearStatusData = REPORT_STATUS_META.map((statusMeta) => ({
     label: statusMeta.label,
     color: statusMeta.color,
@@ -603,7 +620,7 @@ export default function AuthorityDashboard() {
         id: app.id,
         applicant: data.applicant_name || data.application_name || "-",
         department: data.department || "-",
-        academicYear: toReportLabel(data.academic_year, "Not Provided"),
+        academicYear: formatAcademicYear(data.academic_year, "Not Provided"),
         courseCategory: toReportLabel(data.course_category, "Not Provided"),
         nptelApplicationNumber: toReportLabel(data.nptel_application_number, "Not Provided"),
         score: toReportLabel(data.course_score, "Not Provided"),
@@ -633,6 +650,15 @@ export default function AuthorityDashboard() {
   const yearWiseSvg = { width: 860, height: 250, paddingX: 48, paddingTop: 24, paddingBottom: 44 };
   const yearWisePlotWidth = yearWiseSvg.width - (yearWiseSvg.paddingX * 2);
   const yearWisePlotHeight = yearWiseSvg.height - yearWiseSvg.paddingTop - yearWiseSvg.paddingBottom;
+  const yearWiseLineTicks = Array.from(
+    new Set([
+      yearWiseLineMax,
+      Math.round(yearWiseLineMax * 0.75),
+      Math.round(yearWiseLineMax * 0.5),
+      Math.round(yearWiseLineMax * 0.25),
+      0
+    ])
+  ).sort((a, b) => b - a);
   const yearWiseLinePoints = yearWiseLineData.map((item, index) => {
     const x = yearWiseSvg.paddingX + (
       (yearWiseLineData.length > 1 ? index / (yearWiseLineData.length - 1) : 0) * yearWisePlotWidth
@@ -758,7 +784,7 @@ export default function AuthorityDashboard() {
       setMyApprovedApps(liveApprovedByMe);
       const approvedRows = (Array.isArray(liveApprovedByMe) ? liveApprovedByMe : [])
         .filter((app) => {
-          const appYear = toReportLabel(app?.data?.academic_year, "Not Provided");
+          const appYear = formatAcademicYear(app?.data?.academic_year, "Not Provided");
           const appYearType = toAcademicYearType(app?.data?.academic_year_type);
           const appDepartment = toReportLabel(app?.data?.department, "Not Provided");
           const yearPass = reportApprovedYearFilter === "all" || appYear === reportApprovedYearFilter;
@@ -815,7 +841,7 @@ export default function AuthorityDashboard() {
       const studentBody = studentApproved.map((app, index) => {
         const data = app.data || {};
         const bankNameAndBranch = [data.bank_name || "-", data.bank_branch || "-"].join(" / ");
-        const yearLabel = toReportLabel(data.academic_year, "-");
+        const yearLabel = formatAcademicYear(data.academic_year, "-");
         const yearTypeLabel = toAcademicYearType(data.academic_year_type);
         const yearAndType = yearTypeLabel === "Not Provided" ? yearLabel : `${yearLabel} (${yearTypeLabel})`;
         return [
@@ -837,7 +863,7 @@ export default function AuthorityDashboard() {
 
       const facultyBody = facultyApproved.map((app, index) => {
         const data = app.data || {};
-        const yearLabel = toReportLabel(data.academic_year, "-");
+        const yearLabel = formatAcademicYear(data.academic_year, "-");
         const yearTypeLabel = toAcademicYearType(data.academic_year_type);
         const yearAndType = yearTypeLabel === "Not Provided" ? yearLabel : `${yearLabel} (${yearTypeLabel})`;
         return [
@@ -1021,7 +1047,7 @@ export default function AuthorityDashboard() {
       setMyApprovedApps(liveApprovedByMe);
       const approvedRows = (Array.isArray(liveApprovedByMe) ? liveApprovedByMe : [])
         .filter((app) => {
-          const appYear = toReportLabel(app?.data?.academic_year, "Not Provided");
+          const appYear = formatAcademicYear(app?.data?.academic_year, "Not Provided");
           const appYearType = toAcademicYearType(app?.data?.academic_year_type);
           const appDepartment = toReportLabel(app?.data?.department, "Not Provided");
           const yearPass = reportApprovedYearFilter === "all" || appYear === reportApprovedYearFilter;
@@ -1052,7 +1078,7 @@ export default function AuthorityDashboard() {
           app?.data?.applicant_name || app?.data?.application_name || "-",
           app?.application_type || "-",
           app?.data?.department || "-",
-          toReportLabel(app?.data?.academic_year, "-"),
+          formatAcademicYear(app?.data?.academic_year, "-"),
           toAcademicYearType(app?.data?.academic_year_type),
           app?.created_at ? new Date(app.created_at).toLocaleString() : "-",
           Number(getInstitutionCoordinatorApprovedAmount(app) || 0).toFixed(2)
@@ -1533,11 +1559,10 @@ export default function AuthorityDashboard() {
             role="img"
             aria-label="Yearly application trend line graph"
           >
-            {[0, 1, 2, 3, 4].map((index) => {
-              const y = yearWiseSvg.paddingTop + ((index / 4) * yearWisePlotHeight);
-              const value = Math.round(yearWiseLineMax * (1 - (index / 4)));
+            {yearWiseLineTicks.map((value) => {
+              const y = yearWiseSvg.paddingTop + ((1 - (value / yearWiseLineMax)) * yearWisePlotHeight);
               return (
-                <g key={`year-grid-${index}`}>
+                <g key={`year-grid-${value}`}>
                   <line
                     x1={yearWiseSvg.paddingX}
                     y1={y}
@@ -1585,11 +1610,10 @@ export default function AuthorityDashboard() {
             role="img"
             aria-label="Year wise applications line graph from 2024-2025 onward"
           >
-            {[0, 1, 2, 3, 4].map((index) => {
-              const y = yearWiseSvg.paddingTop + ((index / 4) * yearWisePlotHeight);
-              const value = Math.round(yearWiseLineMax * (1 - (index / 4)));
+            {yearWiseLineTicks.map((value) => {
+              const y = yearWiseSvg.paddingTop + ((1 - (value / yearWiseLineMax)) * yearWisePlotHeight);
               return (
-                <g key={`year-grid-${index}`}>
+                <g key={`year-grid-${value}`}>
                   <line
                     x1={yearWiseSvg.paddingX}
                     y1={y}
@@ -1898,45 +1922,55 @@ export default function AuthorityDashboard() {
                 {pendingPageData.rows.map((app) => (
                   <div key={app.id} className="form-section animate-slide-up">
                     <div className="flex items-center justify-between">
-                      <div className="font-bold text-base" style={{color:"var(--text-primary)"}}>{app.data.applicant_name || app.data.application_name || "-"}</div>
+                      <div className="font-bold text-base" style={{color:"var(--text-primary)"}}>{app.data.applicant_name || app.data.application_name || `Application #${app.id}`}</div>
                       <span className="badge">{app.status}</span>
                     </div>
-                    <div className="mt-1 text-xs" style={{color:"var(--text-muted)"}}>ID: {app.id} | Type: {app.application_type || "-"}</div>
+                    <div className="mt-1 text-xs" style={{color:"var(--text-muted)"}}>
+                      {app.application_type ? `ID: ${app.id} | Type: ${app.application_type}` : `ID: ${app.id}`}
+                    </div>
                     <div className="mt-4 grid gap-3 text-sm md:grid-cols-2" style={{color:"var(--text-secondary)"}}>
                       {[
-                        ["Applicant", app.data.applicant_name || app.data.application_name || "-"],
-                        ["Department", app.data.department || "-"],
-                        ["USN", app.data.usn || "-"],
-                        ["Email", app.data.email || "-"],
-                        ["Mobile", app.data.mobile_number || "-"],
-                        ["Designation", app.data.designation || "-"],
-                        ["Semester", app.data.semester || "-"],
-                        ["Academic Year", app.data.academic_year || "-"],
-                        ["Academic Year Type", app.data.academic_year_type || "-"],
-                        ["Claims", app.data.incentive_claim_count ?? "-"],
-                        ["Course", app.data.course_title || "-"],
-                        ["NPTEL Application No", app.data.nptel_application_number || "-"],
-                        ["Platform", app.data.course_platform || "-"],
-                        ["Session", app.data.course_session || "-"],
-                        ["Weeks", app.data.course_weeks ?? "-"],
-                        ["Score", app.data.course_score || "-"],
-                        ["Category", app.data.course_category || "-"],
-                        ["Credits", app.data.course_credits ?? "-"],
-                        ["Fee Paid", app.data.registration_fee_paid ?? "-"],
-                        ["Permissible Claim", app.data.permissible_claim ?? "-"],
-                        ["Bank Acct", app.data.bank_account_number || "-"],
-                        ["Bank IFSC", app.data.bank_ifsc || "-"],
-                        ["Bank Branch", app.data.bank_branch || "-"],
-                        ["Bank Name", app.data.bank_name || "-"],
-                        ["Declaration", app.data.declaration_accepted ? "Yes" : "No"],
-                      ].map(([lbl, val]) => (
-                        <div key={lbl}><span style={{color:"var(--text-muted)"}}>{lbl}:</span> {val}</div>
-                      ))}
-                      <div><span style={{color:"var(--text-muted)"}}>Fee Receipt:</span> {docLink(app.data.fee_receipt_file)}</div>
-                      <div><span style={{color:"var(--text-muted)"}}>Certificate:</span> {docLink(app.data.certificate_file)}</div>
-                      <div><span style={{color:"var(--text-muted)"}}>Bank Passbook:</span> {docLink(app.data.bank_passbook_file)}</div>
-                      <div><span style={{color:"var(--text-muted)"}}>Photograph:</span> {docLink(app.data.photograph_file)}</div>
-                      <div><span style={{color:"var(--text-muted)"}}>Signature:</span> {docLink(app.data.signature_file)}</div>
+                        ["Applicant", app.data.applicant_name || app.data.application_name || ""],
+                        ["Department", app.data.department],
+                        ["USN", app.data.usn],
+                        ["Email", app.data.email],
+                        ["Mobile", app.data.mobile_number],
+                        ["Designation", app.data.designation],
+                        ["Semester", app.data.semester],
+                        ["Academic Year", formatAcademicYear(app.data.academic_year, "")],
+                        ["Academic Year Type", app.data.academic_year_type],
+                        ["Claims", app.data.incentive_claim_count],
+                        ["Course", app.data.course_title],
+                        ["NPTEL Application No", app.data.nptel_application_number],
+                        ["Platform", app.data.course_platform],
+                        ["Session", app.data.course_session],
+                        ["Weeks", app.data.course_weeks],
+                        ["Score", app.data.course_score],
+                        ["Category", app.data.course_category],
+                        ["Credits", app.data.course_credits],
+                        ["Fee Paid", app.data.registration_fee_paid],
+                        ["Permissible Claim", app.data.permissible_claim],
+                        ["Bank Acct", app.data.bank_account_number],
+                        ["Bank IFSC", app.data.bank_ifsc],
+                        ["Bank Branch", app.data.bank_branch],
+                        ["Bank Name", app.data.bank_name],
+                        ["Declaration", app.data.declaration_accepted ? "Yes" : "No"]
+                      ]
+                        .filter(([, val]) => isDisplayValue(val))
+                        .map(([lbl, val]) => (
+                          <div key={lbl}><span style={{color:"var(--text-muted)"}}>{lbl}:</span> {val}</div>
+                        ))}
+                      {[
+                        ["Fee Receipt", app.data.fee_receipt_file],
+                        ["Certificate", app.data.certificate_file],
+                        ["Bank Passbook", app.data.bank_passbook_file],
+                        ["Photograph", app.data.photograph_file],
+                        ["Signature", app.data.signature_file]
+                      ]
+                        .filter(([, path]) => isDisplayValue(path))
+                        .map(([lbl, path]) => (
+                          <div key={lbl}><span style={{color:"var(--text-muted)"}}>{lbl}:</span> {docLink(path)}</div>
+                        ))}
                     </div>
                     <div className="mt-5 pt-4" style={{borderTop:"1px solid var(--border-subtle)"}}>
                       <label className="text-xs uppercase tracking-widest font-medium" style={{color:"var(--text-muted)"}}>Rejection Remark (required)</label>
@@ -2060,27 +2094,35 @@ export default function AuthorityDashboard() {
                 {approvedPageData.rows.map((app) => (
                   <div key={app.id} className="panel p-4">
                     <div className="flex items-center justify-between">
-                      <div className="font-semibold">{app.data.applicant_name || app.data.application_name || "-"}</div>
+                      <div className="font-semibold">{app.data.applicant_name || app.data.application_name || `Application #${app.id}`}</div>
                       <span className="badge">{app.status}</span>
                     </div>
                     <div className="muted mt-2 text-xs">ID: {app.id}</div>
-                    <div className="mt-3 text-sm text-black/70">
-                      <span className="text-black/50">Department:</span> {app.data.department || "-"}
+                    <div className="mt-3 grid gap-2 text-sm text-black/70">
+                      {[
+                        { label: "Department", value: app.data.department || "" },
+                        { label: "Academic Year", value: formatAcademicYear(app.data?.academic_year, "") },
+                        { label: "Academic Year Type", value: toAcademicYearType(app.data?.academic_year_type) },
+                        { label: "Category", value: app.data.course_category || "" },
+                        { label: "Submitted At", value: app.created_at ? new Date(app.created_at).toLocaleString() : "" },
+                        { label: "Approved Amount", value: getInstitutionCoordinatorApprovedAmount(app) }
+                      ]
+                        .filter((item) => hasDisplayText(item.value))
+                        .map((item) => (
+                          <div key={item.label}>
+                            <span className="text-black/50">{item.label}:</span> {item.value}
+                          </div>
+                        ))}
                     </div>
-                    <div className="mt-2 text-sm text-black/70">
-                      <span className="text-black/50">Academic Year:</span> {toReportLabel(app.data?.academic_year, "-")}
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        className="btn btn-primary"
+                        type="button"
+                        onClick={() => setSelectedApprovedApplication(app)}
+                      >
+                        Details
+                      </button>
                     </div>
-                    <div className="mt-2 text-sm text-black/70">
-                      <span className="text-black/50">Academic Year Type:</span> {toAcademicYearType(app.data?.academic_year_type)}
-                    </div>
-                    <div className="mt-2 text-sm text-black/70">
-                      <span className="text-black/50">Submitted At:</span> {app.created_at ? new Date(app.created_at).toLocaleString() : "-"}
-                    </div>
-                    {user?.role === "institution_coordinator" && (
-                      <div className="mt-2 text-sm text-black/70">
-                        <span className="text-black/50">Approved Amount:</span> {getInstitutionCoordinatorApprovedAmount(app)}
-                      </div>
-                    )}
                   </div>
                 ))}
                 {filteredApprovedByMeApps.length === 0 && (
@@ -2838,6 +2880,13 @@ export default function AuthorityDashboard() {
         errorMessage={deleteMessage}
         onClose={closeDeleteAccountPopup}
         onConfirm={deleteAccount}
+      />
+
+      <ApplicationDetailsPopup
+        open={Boolean(selectedApprovedApplication)}
+        application={selectedApprovedApplication}
+        hideEmptyFields
+        onClose={() => setSelectedApprovedApplication(null)}
       />
     </div>
   );
