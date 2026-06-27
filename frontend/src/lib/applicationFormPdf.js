@@ -73,7 +73,7 @@ const filterPrintableRows = (rows) =>
 
 const ensurePageSpace = (doc, cursorY, requiredSpace, drawPageHeader) => {
   const pageHeight = doc.internal.pageSize.getHeight();
-  const bottomPadding = 56;
+  const bottomPadding = 42;
   if (cursorY + requiredSpace <= pageHeight - bottomPadding) {
     return cursorY;
   }
@@ -116,7 +116,7 @@ const drawTwoColumnTable = (doc, autoTable, rows, cursorY, margin, pageWidth) =>
       1: { cellWidth: pageWidth - (margin * 2) - 195 }
     }
   });
-  return (doc.lastAutoTable?.finalY || cursorY) + 12;
+  return (doc.lastAutoTable?.finalY || cursorY) + 8;
 };
 
 const drawDeclarationBlock = (doc, cursorY, margin, pageWidth, accepted) => {
@@ -128,7 +128,7 @@ const drawDeclarationBlock = (doc, cursorY, margin, pageWidth, accepted) => {
 
   doc.setDrawColor(...BORDER_COLOR);
   doc.setLineWidth(0.8);
-  const boxHeight = 66;
+  const boxHeight = 58;
   doc.rect(margin, cursorY, pageWidth - (margin * 2), boxHeight);
 
   doc.setTextColor(...TEXT_COLOR);
@@ -142,14 +142,14 @@ const drawDeclarationBlock = (doc, cursorY, margin, pageWidth, accepted) => {
   });
 
   doc.setFont("times", "bold");
-  doc.text(`Declaration Accepted: ${toBooleanText(accepted)}`, margin + 6, cursorY + boxHeight - 8);
+  doc.text(`Declaration Accepted: ${toBooleanText(accepted)}`, margin + 6, cursorY + boxHeight - 6);
 
-  return cursorY + boxHeight + 16;
+  return cursorY + boxHeight + 12;
 };
 
 const drawApplicantSignatureBlock = (doc, cursorY, margin, signatureImage) => {
   const boxWidth = 220;
-  const boxHeight = 72;
+  const boxHeight = 68;
   const boxX = margin;
   const boxY = cursorY + 2;
   const padding = 6;
@@ -222,7 +222,7 @@ const buildCourseRows = (data) =>
   filterPrintableRows([
     ["Platform", toText(data?.course_platform)],
     ["Title of Course", toText(data?.course_title)],
-    ["NPTEL Application Number", toText(data?.nptel_application_number)],
+    ["NPTEL Roll Number", toText(data?.nptel_application_number)],
     ["Session", toText(data?.course_session)],
     ["Number of Weeks", toText(data?.course_weeks)],
     ["Score (%)", toText(data?.course_score)],
@@ -286,7 +286,7 @@ const drawOfficeUseTable = (doc, autoTable, rows, cursorY, margin) => {
     }
   });
 
-  return (doc.lastAutoTable?.finalY || cursorY) + 12;
+  return (doc.lastAutoTable?.finalY || cursorY) + 10;
 };
 
 export const exportApplicationFormPdf = async (app) => {
@@ -307,9 +307,9 @@ export const exportApplicationFormPdf = async (app) => {
     headerRenderCount += 1;
     return drawPdfHeader(doc, {
       margin,
-      title: "INCENTIVE FORM FOR CERTIFICATION COURSES",
+      title: "Reimbursement Form for Certification Course",
       headerImageDataUrl,
-      titleAlign: isFirstPage ? "center" : "left",
+      titleAlign: "center",
       topPadding: isFirstPage ? 28 : 18
     });
   };
@@ -326,25 +326,25 @@ export const exportApplicationFormPdf = async (app) => {
     return true;
   };
 
-  drawSimpleSection("Applicant's Details", buildApplicantRows(app, data), 140);
-  drawSimpleSection("Course Details", buildCourseRows(data), 150);
-  drawSimpleSection("Financial Details", buildFinancialRows(app, data), 130);
+  drawSimpleSection("Applicant's Details", buildApplicantRows(app, data), 120);
+  drawSimpleSection("Course Details", buildCourseRows(data), 120);
+  drawSimpleSection("Financial Details", buildFinancialRows(app, data), 110);
 
   if (app?.application_type === "student") {
-    drawSimpleSection("Bank Details", buildBankRows(data), 130);
+    drawSimpleSection("Bank Details", buildBankRows(data), 110);
   }
 
-  cursorY = ensurePageSpace(doc, cursorY, 130, drawPageHeader);
+  cursorY = ensurePageSpace(doc, cursorY, 110, drawPageHeader);
   cursorY = drawSectionTitle(doc, `${sectionNumber}. Declaration`, cursorY, margin, pageWidth);
   cursorY = drawDeclarationBlock(doc, cursorY, margin, pageWidth, data?.declaration_accepted);
   sectionNumber += 1;
 
-  cursorY = ensurePageSpace(doc, cursorY, 130, drawPageHeader);
+  cursorY = ensurePageSpace(doc, cursorY, 110, drawPageHeader);
   cursorY = drawSectionTitle(doc, `${sectionNumber}. Applicant Signature`, cursorY, margin, pageWidth);
   cursorY = drawApplicantSignatureBlock(doc, cursorY, margin, signatureImage);
   sectionNumber += 1;
 
-  cursorY = ensurePageSpace(doc, cursorY, 150, drawPageHeader);
+  cursorY = ensurePageSpace(doc, cursorY, 130, drawPageHeader);
   cursorY = drawSectionTitle(doc, `${sectionNumber}. Office Use`, cursorY, margin, pageWidth);
   cursorY = drawOfficeUseTable(doc, autoTable, buildOfficeUseRows(), cursorY, margin);
 

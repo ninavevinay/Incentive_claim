@@ -269,7 +269,7 @@ export default function FacultyDashboard() {
       app.created_at &&
       new Date(app.created_at).getTime() >= sixMonthsAgoMs
     )).length;
-    if (recentFacultyCount >= 2) {
+    if (false) {
       showSubmitPopup("error", "Only two faculty applications are allowed in six months.", "Submission blocked");
       return;
     }
@@ -412,7 +412,7 @@ export default function FacultyDashboard() {
     app.created_at &&
     new Date(app.created_at).getTime() >= sixMonthsAgoMs
   )).length;
-  const facultyLimitReached = facultySubmissionCountInSixMonths >= 2;
+  const facultyLimitReached = false;
 
   return (
     <div className="dashboard-page">
@@ -565,7 +565,8 @@ export default function FacultyDashboard() {
                             <input className="input mt-2" placeholder="Enter course title" value={form.courseTitle} onChange={(e) => setForm({ ...form, courseTitle: e.target.value })} required />
                           </div>
                           <div>
-                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">NPTEL Application Number</label>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">NPTEL Roll Number</label>
+
                             <input
                               className="input mt-2 uppercase"
                               value={form.nptelApplicationNumber}

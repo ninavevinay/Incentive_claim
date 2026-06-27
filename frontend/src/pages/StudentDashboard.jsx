@@ -275,7 +275,7 @@ export default function StudentDashboard() {
       app.created_at &&
       new Date(app.created_at).getTime() >= sixMonthsAgoMs
     )).length;
-    if (recentStudentCount >= 2) {
+    if (false) {
       showSubmitPopup("error", "Only two student applications are allowed in six months.", "Submission blocked");
       return;
     }
@@ -432,7 +432,7 @@ export default function StudentDashboard() {
     app.created_at &&
     new Date(app.created_at).getTime() >= sixMonthsAgoMs
   )).length;
-  const studentLimitReached = studentSubmissionCountInSixMonths >= 2;
+  const studentLimitReached = false;
 
   return (
     <div className="dashboard-page">
@@ -589,7 +589,8 @@ export default function StudentDashboard() {
                             <input className="input mt-2" placeholder="e.g., GenAI" value={form.courseTitle} onChange={(e) => setForm({ ...form, courseTitle: e.target.value })} required />
                           </div>
                           <div>
-                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">NPTEL Application Number</label>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">NPTEL Roll Number</label>
+
                             <input
                               className="input mt-2 uppercase"
                               value={form.nptelApplicationNumber}

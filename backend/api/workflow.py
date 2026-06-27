@@ -709,17 +709,6 @@ def create_student_application(owner: User, data: dict) -> Application:
     if owner.role != "student":
         raise PermissionDenied("Only students can submit this form")
 
-    six_months_ago = portal_now() - timedelta(days=180)
-    recent_count = (
-        Application.objects.filter(
-            owner_id=owner.id,
-            application_type="student",
-            created_at__gte=six_months_ago,
-        ).count()
-    )
-    if recent_count >= 2:
-        raise ValidationError("Only two student applications are allowed in six months")
-
     payload = _normalize_upload_payload(owner.name, data, include_bank_passbook=True, include_designation=False)
 
     with transaction.atomic():
@@ -757,17 +746,6 @@ def create_faculty_application(owner: User, data: dict) -> Application:
     enforce_form_window_open()
     if owner.role != "faculty":
         raise PermissionDenied("Only faculty can submit this form")
-
-    six_months_ago = portal_now() - timedelta(days=180)
-    recent_count = (
-        Application.objects.filter(
-            owner_id=owner.id,
-            application_type="faculty",
-            created_at__gte=six_months_ago,
-        ).count()
-    )
-    if recent_count >= 2:
-        raise ValidationError("Only two faculty applications are allowed in six months")
 
     payload = _normalize_upload_payload(owner.name, data, include_bank_passbook=False, include_designation=True)
 

@@ -1281,7 +1281,7 @@ export default function AuthorityDashboard() {
       "Department",
       "Academic Year",
       "Category",
-      "NPTEL Application Number",
+      "NPTEL Roll Number",
       "Score",
       "Approved Amount (Rs)",
       "Created At"
@@ -1941,7 +1941,7 @@ export default function AuthorityDashboard() {
                         ["Academic Year Type", app.data.academic_year_type],
                         ["Claims", app.data.incentive_claim_count],
                         ["Course", app.data.course_title],
-                        ["NPTEL Application No", app.data.nptel_application_number],
+                        ["NPTEL Roll Number", app.data.nptel_application_number],
                         ["Platform", app.data.course_platform],
                         ["Session", app.data.course_session],
                         ["Weeks", app.data.course_weeks],

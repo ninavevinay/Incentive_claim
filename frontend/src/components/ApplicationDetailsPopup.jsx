@@ -123,7 +123,7 @@ export default function ApplicationDetailsPopup({ open, application, hideEmptyFi
     { label: "Course Category", value: toText(data.course_category) },
     { label: "Platform", value: toText(data.course_platform) },
     { label: "Title of Course", value: toText(data.course_title) },
-    { label: "NPTEL Application Number", value: toText(data.nptel_application_number) },
+    { label: "NPTEL Roll Number", value: toText(data.nptel_application_number) },
     { label: "Session", value: toText(data.course_session) },
     { label: "Number of Weeks", value: toText(data.course_weeks) },
     { label: "Score", value: toText(data.course_score) },
