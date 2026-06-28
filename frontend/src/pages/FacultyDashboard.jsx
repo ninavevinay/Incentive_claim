@@ -31,6 +31,8 @@ const DASHBOARD_FETCH_LIMIT = 60;
 const MAX_FILE_BYTES = 150 * 1024;
 const MAX_FILE_LABEL = "150KB";
 const ACTIVE_TAB_STORAGE_KEY = "incentive:faculty:active-tab";
+const INCENTIVE_CLAIM_OPTIONS = Array.from({ length: 8 }, (_, index) => String(index));
+const DEFAULT_INCENTIVE_CLAIM_COUNT = "0";
 
 export default function FacultyDashboard() {
   const { user, setUser } = useAuth();
@@ -56,7 +58,7 @@ export default function FacultyDashboard() {
     academicYearType: "ODD",
     email: "",
     designation: "",
-    incentiveClaimCount: "00",
+    incentiveClaimCount: DEFAULT_INCENTIVE_CLAIM_COUNT,
     coursePlatform: "",
     courseTitle: "",
     nptelApplicationNumber: "",
@@ -516,20 +518,18 @@ export default function FacultyDashboard() {
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Incentive Claims This Academic Year</label>
-                        <div className="mt-3 flex flex-wrap gap-4 text-sm text-black/70">
-                          {["00", "01", "02"].map((count) => (
-                            <label key={count} className="flex items-center gap-2">
-                              <input
-                                type="radio"
-                                name="facultyIncentiveClaimCount"
-                                value={count}
-                                checked={form.incentiveClaimCount === count}
-                                onChange={(e) => setForm({ ...form, incentiveClaimCount: e.target.value })}
-                              />
+                        <select
+                          className="input mt-2"
+                          value={form.incentiveClaimCount}
+                          onChange={(e) => setForm({ ...form, incentiveClaimCount: e.target.value })}
+                          required
+                        >
+                          {INCENTIVE_CLAIM_OPTIONS.map((count) => (
+                            <option key={count} value={count}>
                               {count}
-                            </label>
+                            </option>
                           ))}
-                        </div>
+                        </select>
                       </div>
                       <div>
                         <label className="text-xs uppercase tracking-[0.2em] text-black/40">Category</label>
@@ -697,7 +697,7 @@ export default function FacultyDashboard() {
                           academicYearType: "ODD",
                           email: normalizeEmail(user?.email || ""),
                           designation: "",
-                          incentiveClaimCount: "00",
+        incentiveClaimCount: DEFAULT_INCENTIVE_CLAIM_COUNT,
                           coursePlatform: "",
                           courseTitle: "",
                           nptelApplicationNumber: "",

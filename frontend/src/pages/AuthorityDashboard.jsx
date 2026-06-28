@@ -102,6 +102,45 @@ const toReportLabel = (value, fallback = "Not Provided") => {
     return "Not Provided";
   };
 
+const normalizeSearchText = (value) => String(value ?? "").trim().toLowerCase();
+
+const buildApplicationSearchText = (app) => {
+  const data = app?.data || {};
+  return [
+    app?.id,
+    app?.application_type,
+    app?.status,
+    data?.applicant_name,
+    data?.application_name,
+    data?.department,
+    data?.usn,
+    data?.email,
+    data?.mobile_number,
+    data?.designation,
+    data?.semester,
+    data?.academic_year,
+    data?.academic_year_type,
+    data?.incentive_claim_count,
+    data?.course_platform,
+    data?.course_title,
+    data?.nptel_application_number,
+    data?.course_session,
+    data?.course_weeks,
+    data?.course_score,
+    data?.course_category,
+    data?.course_credits
+  ]
+    .map(normalizeSearchText)
+    .filter(Boolean)
+    .join(" ");
+};
+
+const matchesApplicationSearch = (app, search) => {
+  const query = normalizeSearchText(search);
+  if (!query) return true;
+  return buildApplicationSearchText(app).includes(query);
+};
+
 const isDisplayValue = (value) => {
   const text = String(value ?? "").trim();
   if (!text) return false;
@@ -228,6 +267,9 @@ export default function AuthorityDashboard() {
   const [reportStudentSearch, setReportStudentSearch] = useState("");
   const [reportStudentYearFilter, setReportStudentYearFilter] = useState("all");
   const [reportStudentCategoryFilter, setReportStudentCategoryFilter] = useState("all");
+  const [pendingSearch, setPendingSearch] = useState("");
+  const [approvedSearch, setApprovedSearch] = useState("");
+  const [totalSearch, setTotalSearch] = useState("");
   const [totalStatusFilter, setTotalStatusFilter] = useState("all");
   const [reportNotice, setReportNotice] = useState("");
   const [loading, setLoading] = useState(true);
@@ -429,10 +471,6 @@ export default function AuthorityDashboard() {
   }, [active, user?.role, authorityFilter]);
 
   useEffect(() => {
-    setPendingPage((prev) => clampPage(prev, Math.ceil(Math.max(apps.length, 1) / AUTHORITY_UI_PAGE_SIZE)));
-  }, [apps.length]);
-
-  useEffect(() => {
     const handleToggle = () => setSidebarOpen((prev) => !prev);
     window.addEventListener("portal:toggle-dashboard-menu", handleToggle);
     return () => window.removeEventListener("portal:toggle-dashboard-menu", handleToggle);
@@ -442,6 +480,7 @@ export default function AuthorityDashboard() {
   const scopedAllApps = user?.role === "institution_coordinator"
     ? allApps
     : allApps.filter((app) => normalize(app.data?.department) === normalize(user?.department));
+  const filteredPendingApps = apps.filter((app) => matchesApplicationSearch(app, pendingSearch));
 
   const localApprovedByMeApps = scopedAllApps.filter((app) => {
     const reviews = app.data?.reviews || [];
@@ -486,14 +525,16 @@ export default function AuthorityDashboard() {
     const appYear = formatAcademicYear(app?.data?.academic_year, "Not Provided");
     const appYearType = toAcademicYearType(app?.data?.academic_year_type);
     const appDepartment = toReportLabel(app?.data?.department, "Not Provided");
+    const searchPass = matchesApplicationSearch(app, approvedSearch);
     const yearPass = reportApprovedYearFilter === "all" || appYear === reportApprovedYearFilter;
     const yearTypePass = reportApprovedYearTypeFilter === "all" || appYearType === reportApprovedYearTypeFilter;
     const departmentPass = reportApprovedDepartmentFilter === "all" || appDepartment === reportApprovedDepartmentFilter;
-    return yearPass && yearTypePass && departmentPass;
+    return searchPass && yearPass && yearTypePass && departmentPass;
   });
   const filteredTotalApps = scopedAllApps.filter((app) => {
-    if (totalStatusFilter === "all") return true;
-    return String(app?.status || "").toLowerCase() === totalStatusFilter;
+    const searchPass = matchesApplicationSearch(app, totalSearch);
+    const statusPass = totalStatusFilter === "all" || String(app?.status || "").toLowerCase() === totalStatusFilter;
+    return searchPass && statusPass;
   });
   const filteredAuthorityUsers = authorityUsers.filter((u) => {
     const value = `${u.name} ${u.email} ${u.department} ${AUTHORITY_ROLE_LABELS[u.role] || u.role}`.toLowerCase();
@@ -501,10 +542,16 @@ export default function AuthorityDashboard() {
   });
   const activeAuthorityUsersCount = authorityUsers.filter((u) => u?.is_active !== false).length;
   const inactiveAuthorityUsersCount = authorityUsers.length - activeAuthorityUsersCount;
-  const pendingPageData = paginateRows(apps, pendingPage);
+  const pendingPageData = paginateRows(filteredPendingApps, pendingPage);
   const approvedPageData = paginateRows(filteredApprovedByMeApps, approvedPage);
   const totalPageData = paginateRows(filteredTotalApps, totalPage);
   const authorityUsersPageData = paginateRows(filteredAuthorityUsers, authorityUsersPage);
+
+  useEffect(() => {
+    setPendingPage((prev) =>
+      clampPage(prev, Math.ceil(Math.max(filteredPendingApps.length, 1) / AUTHORITY_UI_PAGE_SIZE))
+    );
+  }, [filteredPendingApps.length]);
 
   useEffect(() => {
     setApprovedPage((prev) =>
@@ -784,13 +831,14 @@ export default function AuthorityDashboard() {
       setMyApprovedApps(liveApprovedByMe);
       const approvedRows = (Array.isArray(liveApprovedByMe) ? liveApprovedByMe : [])
         .filter((app) => {
+          const searchPass = matchesApplicationSearch(app, approvedSearch);
           const appYear = formatAcademicYear(app?.data?.academic_year, "Not Provided");
           const appYearType = toAcademicYearType(app?.data?.academic_year_type);
           const appDepartment = toReportLabel(app?.data?.department, "Not Provided");
           const yearPass = reportApprovedYearFilter === "all" || appYear === reportApprovedYearFilter;
           const yearTypePass = reportApprovedYearTypeFilter === "all" || appYearType === reportApprovedYearTypeFilter;
           const departmentPass = reportApprovedDepartmentFilter === "all" || appDepartment === reportApprovedDepartmentFilter;
-          return yearPass && yearTypePass && departmentPass;
+          return searchPass && yearPass && yearTypePass && departmentPass;
         })
         .filter((app) => app.status === "approved");
       const studentApproved = approvedRows.filter((app) => app.application_type === "student");
@@ -1047,13 +1095,14 @@ export default function AuthorityDashboard() {
       setMyApprovedApps(liveApprovedByMe);
       const approvedRows = (Array.isArray(liveApprovedByMe) ? liveApprovedByMe : [])
         .filter((app) => {
+          const searchPass = matchesApplicationSearch(app, approvedSearch);
           const appYear = formatAcademicYear(app?.data?.academic_year, "Not Provided");
           const appYearType = toAcademicYearType(app?.data?.academic_year_type);
           const appDepartment = toReportLabel(app?.data?.department, "Not Provided");
           const yearPass = reportApprovedYearFilter === "all" || appYear === reportApprovedYearFilter;
           const yearTypePass = reportApprovedYearTypeFilter === "all" || appYearType === reportApprovedYearTypeFilter;
           const departmentPass = reportApprovedDepartmentFilter === "all" || appDepartment === reportApprovedDepartmentFilter;
-          return yearPass && yearTypePass && departmentPass;
+          return searchPass && yearPass && yearTypePass && departmentPass;
         })
         .filter((app) => app.status === "approved");
 
@@ -1913,9 +1962,22 @@ export default function AuthorityDashboard() {
               <div className="form-section-header" style={{marginBottom:"1.25rem"}}>
                 <div>
                   <h2 className="text-xl font-bold font-display" style={{color:"var(--text-primary)"}}>Pending Applications</h2>
-                  <p className="text-xs mt-1" style={{color:"var(--text-muted)"}}>{apps.length} application(s) awaiting review</p>
+                  <p className="text-xs mt-1" style={{color:"var(--text-muted)"}}>{filteredPendingApps.length} application(s) awaiting review</p>
                 </div>
                 <button className="btn btn-ghost" type="button" onClick={refresh}>Refresh</button>
+              </div>
+              <div className="mt-4 w-full lg:max-w-xl">
+                <label className="text-xs uppercase tracking-[0.2em] text-black/40">Search Pending Applications</label>
+                <input
+                  className="input mt-2"
+                  type="search"
+                  placeholder="Search by name, ID, USN, department, course title"
+                  value={pendingSearch}
+                  onChange={(e) => {
+                    setPendingSearch(e.target.value);
+                    setPendingPage(1);
+                  }}
+                />
               </div>
               {message && <div className="mt-3 rounded-xl px-4 py-2 text-sm font-medium" style={{background:"rgba(16,185,129,0.1)",color:"#10b981",border:"1px solid rgba(16,185,129,0.2)"}}>{message}</div>}
               <div className="mt-4 grid gap-5">
@@ -1988,13 +2050,17 @@ export default function AuthorityDashboard() {
                     </div>
                   </div>
                 ))}
-                {apps.length === 0 && (
+                {filteredPendingApps.length === 0 && (
                   <div className="form-section text-center py-8">
-                    <div className="text-sm font-medium" style={{color:"var(--text-muted)"}}>No pending applications - you're all caught up!</div>
+                    <div className="text-sm font-medium" style={{color:"var(--text-muted)"}}>
+                      {pendingSearch.trim()
+                        ? "No pending applications match your search."
+                        : "No pending applications - you're all caught up!"}
+                    </div>
                   </div>
                 )}
               </div>
-              {apps.length > 0 && (
+              {filteredPendingApps.length > 0 && (
                 <div className="mt-4 flex items-center justify-between gap-2">
                   <div className="muted text-sm">
                     Page {pendingPageData.currentPage} of {pendingPageData.totalPages}
@@ -2039,6 +2105,19 @@ export default function AuthorityDashboard() {
                     </>
                   )}
                 </div>
+              </div>
+              <div className="mt-4 w-full lg:max-w-xl">
+                <label className="text-xs uppercase tracking-[0.2em] text-black/40">Search Approved Applications</label>
+                <input
+                  className="input mt-2"
+                  type="search"
+                  placeholder="Search by name, ID, department, course title"
+                  value={approvedSearch}
+                  onChange={(e) => {
+                    setApprovedSearch(e.target.value);
+                    setApprovedPage(1);
+                  }}
+                />
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:max-w-5xl lg:grid-cols-3">
                 <div>
@@ -2126,7 +2205,11 @@ export default function AuthorityDashboard() {
                   </div>
                 ))}
                 {filteredApprovedByMeApps.length === 0 && (
-                  <div className="muted text-sm">No applications found for the selected filters.</div>
+                  <div className="muted text-sm">
+                    {approvedSearch.trim()
+                      ? "No approved applications match your search and filters."
+                      : "No applications found for the selected filters."}
+                  </div>
                 )}
               </div>
               {filteredApprovedByMeApps.length > 0 && (
@@ -2177,6 +2260,19 @@ export default function AuthorityDashboard() {
                   </select>
                 </div>
               </div>
+              <div className="mt-4 w-full lg:max-w-xl">
+                <label className="text-xs uppercase tracking-[0.2em] text-black/40">Search Total Applications</label>
+                <input
+                  className="input mt-2"
+                  type="search"
+                  placeholder="Search by name, ID, department, status, course title"
+                  value={totalSearch}
+                  onChange={(e) => {
+                    setTotalSearch(e.target.value);
+                    setTotalPage(1);
+                  }}
+                />
+              </div>
               <div className="mt-4 grid gap-4">
                 {totalPageData.rows.map((app) => (
                   <div key={app.id} className="panel p-4">
@@ -2194,7 +2290,11 @@ export default function AuthorityDashboard() {
                   </div>
                 ))}
                 {filteredTotalApps.length === 0 && (
-                  <div className="muted text-sm">No applications.</div>
+                  <div className="muted text-sm">
+                    {totalSearch.trim()
+                      ? "No applications match your search and filter."
+                      : "No applications."}
+                  </div>
                 )}
               </div>
               {filteredTotalApps.length > 0 && (
