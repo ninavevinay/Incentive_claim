@@ -3,17 +3,27 @@ import Sidebar from "../components/Sidebar.jsx";
 import DashboardMobileSidebar from "../components/DashboardMobileSidebar.jsx";
 import Topbar from "../components/Topbar.jsx";
 import ApplicationDetailsPopup from "../components/ApplicationDetailsPopup.jsx";
+import SubmitStatusPopup from "../components/SubmitStatusPopup.jsx";
 import DangerConfirmPopup from "../components/DangerConfirmPopup.jsx";
 import { api, resolveMediaUrl } from "../lib/api.js";
 import { useAuth, logout } from "../lib/auth.jsx";
 import { getApprovedAmount, getInstitutionCoordinatorApprovedAmount } from "../lib/amount.js";
-import { formatAcademicYear } from "../lib/academicYear.js";
+import { formatAcademicYear, isAcademicYearFormat, normalizeAcademicYear } from "../lib/academicYear.js";
+import { exportApplicationFormPdf } from "../lib/applicationFormPdf.js";
 import { drawPdfHeader, getPdfHeaderImageDataUrl } from "../lib/pdfHeader.js";
 import { DashboardSkeleton } from "../components/Skeleton.jsx";
 import { getStoredMenuSelection, setStoredMenuSelection } from "../lib/dashboardStorage.js";
+import {
+  COURSE_CATEGORY_OPTIONS,
+  normalizeCourseCategory,
+  shouldShowCourseDetails,
+  shouldShowRegistrationDetails
+} from "../lib/courseCategories.js";
 
 const baseMenu = [
   "Overview",
+  "Application Form",
+  "My Applications",
   "Pending Applications",
   "My Approved Applications",
   "Total Applications",
@@ -26,6 +36,10 @@ const AUTO_REFRESH_MS = 30000;
 const AUTHORITY_FETCH_LIMIT = 250;
 const FEEDBACK_FETCH_LIMIT = 200;
 const REPORT_FEEDBACK_FETCH_LIMIT = 500;
+const MAX_FILE_BYTES = 150 * 1024;
+const MAX_FILE_LABEL = "150KB";
+const INCENTIVE_CLAIM_OPTIONS = Array.from({ length: 8 }, (_, index) => String(index));
+const DEFAULT_INCENTIVE_CLAIM_COUNT = "0";
 const getAuthorityTabStorageKey = (role) => `incentive:authority:${role || "unknown"}:active-tab`;
 
 const ROLE_LABELS = {
@@ -95,12 +109,36 @@ const toReportLabel = (value, fallback = "Not Provided") => {
   return text || fallback;
 };
 
-  const toAcademicYearType = (value) => {
-    const normalized = String(value ?? "").trim().toUpperCase();
-    if (normalized === "ODD") return "ODD";
-    if (normalized === "EVEN") return "EVEN";
-    return "Not Provided";
-  };
+const toAcademicYearType = (value) => {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (normalized === "ODD") return "ODD";
+  if (normalized === "EVEN") return "EVEN";
+  return "Not Provided";
+};
+
+const statusLabel = (status) => {
+  switch (status) {
+    case "pending_department_coordinator":
+      return "Dept Coordinator Approval Pending";
+    case "pending_department_hod":
+      return "Dept HOD Approval Pending";
+    case "pending_institution_coordinator":
+      return "Institute Coordinator Approval Pending";
+    case "approved":
+      return "Approved";
+    case "rejected":
+      return "Rejected";
+    default:
+      return status || "-";
+  }
+};
+
+const flowSteps = [
+  { key: "pending_department_coordinator", label: "Dept Coordinator" },
+  { key: "pending_department_hod", label: "Dept HOD" },
+  { key: "pending_institution_coordinator", label: "Institute Coordinator" },
+  { key: "approved", label: "Approved" }
+];
 
 const normalizeSearchText = (value) => String(value ?? "").trim().toLowerCase();
 
@@ -256,7 +294,17 @@ export default function AuthorityDashboard() {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState("");
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
-  const [selectedApprovedApplication, setSelectedApprovedApplication] = useState(null);
+  const [selectedApplication, setSelectedApplication] = useState(null);
+  const [mySubmittedApps, setMySubmittedApps] = useState([]);
+  const [applicationsNotice, setApplicationsNotice] = useState("");
+  const [applicationsNoticeType, setApplicationsNoticeType] = useState("success");
+  const [submitPopup, setSubmitPopup] = useState({
+    open: false,
+    type: "success",
+    title: "",
+    message: ""
+  });
+  const [isSubmittingApplication, setIsSubmittingApplication] = useState(false);
   const [rejectRemarks, setRejectRemarks] = useState({});
   const [approveAmounts, setApproveAmounts] = useState({});
   const [reportChartType, setReportChartType] = useState("pie");
@@ -269,18 +317,47 @@ export default function AuthorityDashboard() {
   const [reportStudentCategoryFilter, setReportStudentCategoryFilter] = useState("all");
   const [pendingSearch, setPendingSearch] = useState("");
   const [approvedSearch, setApprovedSearch] = useState("");
+  const [myApplicationsSearch, setMyApplicationsSearch] = useState("");
   const [totalSearch, setTotalSearch] = useState("");
   const [totalStatusFilter, setTotalStatusFilter] = useState("all");
   const [reportNotice, setReportNotice] = useState("");
   const [loading, setLoading] = useState(true);
   const [isTabRestored, setIsTabRestored] = useState(false);
   const [pendingPage, setPendingPage] = useState(1);
+  const [myApplicationsPage, setMyApplicationsPage] = useState(1);
   const [approvedPage, setApprovedPage] = useState(1);
   const [totalPage, setTotalPage] = useState(1);
+  const [form, setForm] = useState({
+    department: "",
+    applicantName: "",
+    mobileNumber: "",
+    academicYear: "",
+    academicYearType: "ODD",
+    email: "",
+    designation: "",
+    incentiveClaimCount: DEFAULT_INCENTIVE_CLAIM_COUNT,
+    coursePlatform: "",
+    courseTitle: "",
+    nptelApplicationNumber: "",
+    courseSession: "",
+    courseWeeks: "",
+    courseScore: "",
+    courseCategory: "",
+    courseCredits: "",
+    registrationFeePaid: "",
+    permissibleClaim: "",
+    feeReceiptFile: null,
+    certificateFile: null,
+    photographFile: null,
+    declarationAccepted: false
+  });
+  const submittingApplicationRef = useRef(false);
+  const courseSectionsRef = useRef(null);
+  const previousCourseCategoryRef = useRef(form.courseCategory);
   const graphContainerRef = useRef(null);
   const allGraphsPdfRef = useRef(null);
   const menu = user?.role === "institution_coordinator"
-    ? [...baseMenu.slice(0, 4), "Reports", "Notice", "Authority Users", "Form Filling Window", ...baseMenu.slice(4)]
+    ? [...baseMenu.slice(0, 6), "Reports", "Notice", "Authority Users", "Form Filling Window", ...baseMenu.slice(6)]
     : baseMenu;
 
   useEffect(() => {
@@ -312,6 +389,12 @@ export default function AuthorityDashboard() {
     setAuthorityUsers(normalizedRows);
     return normalizedRows;
   };
+  const loadMyApplications = async () => {
+    const rows = await api.myApplications({ limit: AUTHORITY_FETCH_LIMIT }).catch(() => []);
+    const normalizedRows = Array.isArray(rows) ? rows : [];
+    setMySubmittedApps(normalizedRows);
+    return normalizedRows;
+  };
   const loadFormWindowData = async () => {
     if (user?.role !== "institution_coordinator") {
       setFormWindowForm({ start_date: "", end_date: "" });
@@ -340,6 +423,7 @@ export default function AuthorityDashboard() {
     Promise.all([
       fetchPending().then(setApps).catch(() => setApps([])),
       fetchAll().then(setAllApps).catch(() => setAllApps([])),
+      loadMyApplications(),
       api.myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT })
         .then(setMyApprovedApps)
         .catch(() => setMyApprovedApps([])),
@@ -353,6 +437,7 @@ export default function AuthorityDashboard() {
       if (document.visibilityState !== "visible") return;
       fetchPending().then(setApps).catch(() => setApps([]));
       fetchAll().then(setAllApps).catch(() => setAllApps([]));
+      loadMyApplications();
       api.publicNotices().then(setNotices).catch(() => setNotices([]));
       if (active === "My Approved Applications") {
         api.myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT })
@@ -380,6 +465,7 @@ export default function AuthorityDashboard() {
     const refreshOnFocus = () => {
       fetchPending().then(setApps).catch(() => setApps([]));
       fetchAll().then(setAllApps).catch(() => setAllApps([]));
+      loadMyApplications();
       api.publicNotices().then(setNotices).catch(() => setNotices([]));
       if (active === "My Approved Applications") {
         api.myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT })
@@ -416,10 +502,21 @@ export default function AuthorityDashboard() {
     setDepartmentDraft(user?.department || "");
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    setForm((prev) => ({
+      ...prev,
+      department: prev.department || user.department || "",
+      applicantName: toUpperText(prev.applicantName || user.name || ""),
+      email: prev.email || normalizeEmail(user.email || "")
+    }));
+  }, [user]);
+
   const refresh = async () => {
     setLoading(true);
     setApps(await fetchPending().catch(() => []));
     setAllApps(await fetchAll().catch(() => []));
+    await loadMyApplications();
     setMyApprovedApps(
       await api.myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT }).catch(() => [])
     );
@@ -443,6 +540,145 @@ export default function AuthorityDashboard() {
     );
   };
 
+  const toUpperText = (value) => String(value || "").toUpperCase();
+  const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+  const showCourseDetails = shouldShowCourseDetails(form.courseCategory);
+  const showRegistrationDetails = shouldShowRegistrationDetails(form.courseCategory);
+  const closeSubmitPopup = () => setSubmitPopup((prev) => ({ ...prev, open: false }));
+  const showSubmitPopup = (type, popupMessage, title = "") => {
+    setSubmitPopup({
+      open: true,
+      type,
+      title,
+      message: popupMessage
+    });
+  };
+  const viewApplicationsFromPopup = () => {
+    closeSubmitPopup();
+    setActive("My Applications");
+  };
+
+  useEffect(() => {
+    const previousCategory = previousCourseCategoryRef.current;
+    previousCourseCategoryRef.current = form.courseCategory;
+    if (!showCourseDetails || previousCategory === form.courseCategory) return;
+    courseSectionsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [form.courseCategory, showCourseDetails]);
+
+  const submitApplication = async (e) => {
+    e.preventDefault();
+    if (submittingApplicationRef.current) {
+      showSubmitPopup("error", "Application submission is in progress. Please wait.", "Please wait");
+      return;
+    }
+    const fixedDepartment = toUpperText(user?.department || form.department);
+    const fixedApplicantName = toUpperText(user?.name || form.applicantName);
+    const fixedEmail = normalizeEmail(user?.email || form.email);
+    const academicYear = normalizeAcademicYear(form.academicYear);
+    if (!normalizeCourseCategory(form.courseCategory)) {
+      showSubmitPopup("error", "Please select a course category before submitting.", "Category required");
+      return;
+    }
+    if (!isAcademicYearFormat(academicYear)) {
+      showSubmitPopup("error", "Academic year must be in 2023 - 2024 format.", "Academic year required");
+      return;
+    }
+    const oversizedFiles = [
+      ...(showCourseDetails ? [form.feeReceiptFile] : []),
+      form.certificateFile,
+      form.photographFile
+    ].filter((file) => file && file.size > MAX_FILE_BYTES);
+    if (oversizedFiles.length > 0) {
+      const fileNames = oversizedFiles.map((file) => file.name).join(", ");
+      showSubmitPopup(
+        "error",
+        `File too large. Max ${MAX_FILE_LABEL} per file. Please compress: ${fileNames}`,
+        "Upload issue"
+      );
+      return;
+    }
+    const data = new FormData();
+    data.append("department", fixedDepartment);
+    data.append("applicant_name", fixedApplicantName);
+    data.append("mobile_number", toUpperText(form.mobileNumber));
+    data.append("academic_year", academicYear);
+    data.append("academic_year_type", toUpperText(form.academicYearType));
+    data.append("email", fixedEmail);
+    data.append("designation", toUpperText(form.designation));
+    data.append("incentive_claim_count", String(form.incentiveClaimCount));
+    data.append("course_category", toUpperText(form.courseCategory));
+    if (showRegistrationDetails) {
+      data.append("registration_fee_paid", String(form.registrationFeePaid));
+      data.append("permissible_claim", String(form.permissibleClaim));
+    }
+    if (showCourseDetails) {
+      data.append("course_platform", toUpperText(form.coursePlatform));
+      data.append("course_title", toUpperText(form.courseTitle));
+      data.append("nptel_application_number", toUpperText(form.nptelApplicationNumber));
+      data.append("course_session", toUpperText(form.courseSession));
+      data.append("course_weeks", String(form.courseWeeks));
+      data.append("course_score", toUpperText(form.courseScore));
+      data.append("course_credits", String(form.courseCredits));
+      if (form.feeReceiptFile) data.append("fee_receipt_file", form.feeReceiptFile);
+    }
+    if (form.certificateFile) data.append("certificate_file", form.certificateFile);
+    if (form.photographFile) data.append("photograph_file", form.photographFile);
+    data.append("declaration_accepted", String(form.declarationAccepted));
+    submittingApplicationRef.current = true;
+    setIsSubmittingApplication(true);
+    try {
+      await api.submitFaculty(data);
+      setForm({
+        department: user?.department || "",
+        applicantName: user?.name || "",
+        mobileNumber: "",
+        academicYear: "",
+        academicYearType: "ODD",
+        email: normalizeEmail(user?.email || ""),
+        designation: "",
+        incentiveClaimCount: DEFAULT_INCENTIVE_CLAIM_COUNT,
+        coursePlatform: "",
+        courseTitle: "",
+        nptelApplicationNumber: "",
+        courseSession: "",
+        courseWeeks: "",
+        courseScore: "",
+        courseCategory: "",
+        courseCredits: "",
+        registrationFeePaid: "",
+        permissibleClaim: "",
+        feeReceiptFile: null,
+        certificateFile: null,
+        photographFile: null,
+        declarationAccepted: false
+      });
+      await loadMyApplications();
+      showSubmitPopup("success", "Your application has been submitted and sent for review.", "Application submitted");
+    } catch (err) {
+      const tooLarge = err?.status === 413 || /file too large/i.test(err?.message || "");
+      showSubmitPopup(
+        "error",
+        tooLarge ? `File too large. Max ${MAX_FILE_LABEL} per file.` : (err.message || "Failed to submit application."),
+        "Unable to submit"
+      );
+    } finally {
+      submittingApplicationRef.current = false;
+      setIsSubmittingApplication(false);
+    }
+  };
+
+  const printApplicationForm = async (app) => {
+    setApplicationsNotice("");
+    try {
+      await exportApplicationFormPdf(app);
+      setApplicationsNoticeType("success");
+      setApplicationsNotice(`Application form PDF exported for ID ${app?.id || "-"}.`);
+    } catch (err) {
+      setApplicationsNoticeType("error");
+      setApplicationsNotice(err?.message || "Failed to export application form PDF.");
+    }
+  };
+
   useEffect(() => {
     if (!menu.includes(active)) {
       setActive("Overview");
@@ -458,6 +694,9 @@ export default function AuthorityDashboard() {
   useEffect(() => {
     if (active === "My Approved Applications") {
       refreshApprovedOnly();
+    }
+    if (active === "My Applications" || active === "Application Form") {
+      loadMyApplications();
     }
     if (active === "Feedback") {
       loadFeedback();
@@ -499,6 +738,20 @@ export default function AuthorityDashboard() {
         (review?.reviewer_id === undefined || review?.reviewer_id === null)
     );
   });
+  const getMyLatestReview = (app) => {
+    const reviews = Array.isArray(app?.data?.reviews) ? app.data.reviews : [];
+    const currentUserId = String(user?.id || "");
+    const currentRole = String(user?.role || "");
+    return (
+      [...reviews].reverse().find((review) => {
+        if (review?.reviewer_id !== undefined && review?.reviewer_id !== null) {
+          return currentUserId && String(review.reviewer_id) === currentUserId;
+        }
+        return review?.role === currentRole;
+      }) || null
+    );
+  };
+  const localReviewedByMeApps = scopedAllApps.filter((app) => Boolean(getMyLatestReview(app)));
 
   const mergeById = (primary, fallback) => {
     const map = new Map();
@@ -531,6 +784,7 @@ export default function AuthorityDashboard() {
     const departmentPass = reportApprovedDepartmentFilter === "all" || appDepartment === reportApprovedDepartmentFilter;
     return searchPass && yearPass && yearTypePass && departmentPass;
   });
+  const filteredMySubmittedApps = mySubmittedApps.filter((app) => matchesApplicationSearch(app, myApplicationsSearch));
   const filteredTotalApps = scopedAllApps.filter((app) => {
     const searchPass = matchesApplicationSearch(app, totalSearch);
     const statusPass = totalStatusFilter === "all" || String(app?.status || "").toLowerCase() === totalStatusFilter;
@@ -543,6 +797,7 @@ export default function AuthorityDashboard() {
   const activeAuthorityUsersCount = authorityUsers.filter((u) => u?.is_active !== false).length;
   const inactiveAuthorityUsersCount = authorityUsers.length - activeAuthorityUsersCount;
   const pendingPageData = paginateRows(filteredPendingApps, pendingPage);
+  const myApplicationsPageData = paginateRows(filteredMySubmittedApps, myApplicationsPage);
   const approvedPageData = paginateRows(filteredApprovedByMeApps, approvedPage);
   const totalPageData = paginateRows(filteredTotalApps, totalPage);
   const authorityUsersPageData = paginateRows(filteredAuthorityUsers, authorityUsersPage);
@@ -552,6 +807,12 @@ export default function AuthorityDashboard() {
       clampPage(prev, Math.ceil(Math.max(filteredPendingApps.length, 1) / AUTHORITY_UI_PAGE_SIZE))
     );
   }, [filteredPendingApps.length]);
+
+  useEffect(() => {
+    setMyApplicationsPage((prev) =>
+      clampPage(prev, Math.ceil(Math.max(filteredMySubmittedApps.length, 1) / AUTHORITY_UI_PAGE_SIZE))
+    );
+  }, [filteredMySubmittedApps.length]);
 
   useEffect(() => {
     setApprovedPage((prev) =>
@@ -821,6 +1082,12 @@ export default function AuthorityDashboard() {
     } catch (err) {
       setMessage(err.message);
     }
+  };
+
+  const formatMyReviewAction = (value) => {
+    if (value === "approve") return "Approved";
+    if (value === "reject") return "Rejected";
+    return value || "-";
   };
 
   const exportApprovedApplicationsPdf = async () => {
@@ -1957,6 +2224,282 @@ export default function AuthorityDashboard() {
             </div>
           )}
 
+          {active === "Application Form" && (
+            <div className="mt-8 animate-slide-up">
+              <div className="form-section">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-bold font-display" style={{ color: "var(--text-primary)" }}>
+                      Application Form
+                    </h2>
+                    <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>
+                      Submit your reimbursement application with the same review workflow used across the portal.
+                    </p>
+                  </div>
+                  <span className="badge">Live</span>
+                </div>
+
+                <form onSubmit={submitApplication} className="mt-6 space-y-5 pb-24 sm:mt-8 sm:space-y-6">
+                  <div className="form-section">
+                    <div className="form-section-header">
+                      <div className="form-section-title">Applicant Details</div>
+                      <div className="form-section-subtitle">Authority profile</div>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Department</label>
+                        <input className="input mt-2 bg-black/5" value={form.department} readOnly required />
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Applicant Name</label>
+                        <input className="input mt-2 bg-black/5 font-semibold" value={toUpperText(form.applicantName)} readOnly required />
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Mobile Number</label>
+                        <input className="input mt-2" value={form.mobileNumber} onChange={(e) => setForm({ ...form, mobileNumber: e.target.value })} required />
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Email ID</label>
+                        <input className="input mt-2 bg-black/5" type="email" value={form.email} readOnly required />
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Designation</label>
+                        <input className="input mt-2" value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} required />
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year</label>
+                        <input
+                          className="input mt-2"
+                          value={form.academicYear}
+                          onChange={(e) => setForm({ ...form, academicYear: e.target.value })}
+                          onBlur={(e) => setForm((prev) => ({ ...prev, academicYear: normalizeAcademicYear(e.target.value) }))}
+                          required
+                          placeholder="eg., 2023 - 2024"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year Type</label>
+                        <div className="mt-3 flex flex-wrap gap-4 text-sm text-black/70">
+                          {["ODD", "EVEN"].map((yearType) => (
+                            <label key={yearType} className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                name="authorityAcademicYearType"
+                                value={yearType}
+                                checked={form.academicYearType === yearType}
+                                onChange={(e) => setForm({ ...form, academicYearType: e.target.value })}
+                              />
+                              {yearType}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Incentive Claims This Academic Year</label>
+                        <select
+                          className="input mt-2"
+                          value={form.incentiveClaimCount}
+                          onChange={(e) => setForm({ ...form, incentiveClaimCount: e.target.value })}
+                          required
+                        >
+                          {INCENTIVE_CLAIM_OPTIONS.map((count) => (
+                            <option key={count} value={count}>
+                              {count}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Category</label>
+                        <select
+                          className="input mt-2"
+                          value={form.courseCategory}
+                          onChange={(e) => setForm({ ...form, courseCategory: e.target.value })}
+                          required
+                        >
+                          <option value="" disabled>Select category</option>
+                          {COURSE_CATEGORY_OPTIONS.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {showCourseDetails && (
+                    <div ref={courseSectionsRef} className="space-y-5">
+                      <div className="form-section">
+                        <div className="form-section-header">
+                          <div className="form-section-title">Course Details</div>
+                          <div className="form-section-subtitle">Certification information</div>
+                        </div>
+                        <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+                          <div>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Platform</label>
+                            <input className="input mt-2" placeholder="Enter platform (e.g., NPTEL, Coursera)" value={form.coursePlatform} onChange={(e) => setForm({ ...form, coursePlatform: e.target.value })} required />
+                          </div>
+                          <div>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Title of Course</label>
+                            <input className="input mt-2" placeholder="Enter course title" value={form.courseTitle} onChange={(e) => setForm({ ...form, courseTitle: e.target.value })} required />
+                          </div>
+                          <div>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">NPTEL Roll Number</label>
+                            <input
+                              className="input mt-2 uppercase"
+                              value={form.nptelApplicationNumber}
+                              onChange={(e) => setForm({ ...form, nptelApplicationNumber: toUpperText(e.target.value) })}
+                              required
+                              placeholder="e.g., NPTEL-APP-12345"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Session</label>
+                            <input className="input mt-2" value={form.courseSession} onChange={(e) => setForm({ ...form, courseSession: e.target.value })} required />
+                          </div>
+                          <div>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Number of Weeks</label>
+                            <input className="input mt-2" type="number" min="1" value={form.courseWeeks} onChange={(e) => setForm({ ...form, courseWeeks: e.target.value })} required />
+                          </div>
+                          <div>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Score</label>
+                            <input className="input mt-2" value={form.courseScore} onChange={(e) => setForm({ ...form, courseScore: e.target.value })} required />
+                          </div>
+                          <div>
+                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Credits</label>
+                            <input className="input mt-2" type="number" min="0" value={form.courseCredits} onChange={(e) => setForm({ ...form, courseCredits: e.target.value })} required />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {showRegistrationDetails && (
+                    <div className="form-section">
+                      <div className="form-section-header">
+                        <div className="form-section-title">Registration Details</div>
+                        <div className="form-section-subtitle">Fee + claim</div>
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <div>
+                          <label className="text-xs uppercase tracking-[0.2em] text-black/40">Registration Fee Paid (Rs)</label>
+                          <input className="input mt-2" type="number" min="0" value={form.registrationFeePaid} onChange={(e) => setForm({ ...form, registrationFeePaid: e.target.value })} required />
+                        </div>
+                        <div>
+                          <label className="text-xs uppercase tracking-[0.2em] text-black/40">Permissible Claim (Rs)</label>
+                          <input className="input mt-2" type="number" min="0" value={form.permissibleClaim} onChange={(e) => setForm({ ...form, permissibleClaim: e.target.value })} required />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="form-section">
+                    <div className="form-section-header">
+                      <div className="form-section-title">Documents Attached</div>
+                      <div className="form-section-subtitle">Upload proofs</div>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {showCourseDetails && (
+                        <div>
+                          <label className="text-xs uppercase tracking-[0.2em] text-black/40">Fee Payment Receipt (Max 150KB)</label>
+                          <input
+                            className="input mt-2"
+                            type="file"
+                            accept=".pdf,application/pdf"
+                            onChange={(e) => setForm({ ...form, feeReceiptFile: e.target.files?.[0] || null })}
+                            required
+                          />
+                          {form.feeReceiptFile && <div className="muted mt-1 text-xs">{form.feeReceiptFile?.name}</div>}
+                        </div>
+                      )}
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Certificate From Certification Authority (Max 150KB)</label>
+                        <input
+                          className="input mt-2"
+                          type="file"
+                          accept=".pdf,application/pdf"
+                          onChange={(e) => setForm({ ...form, certificateFile: e.target.files?.[0] || null })}
+                          required
+                        />
+                        {form.certificateFile && <div className="muted mt-1 text-xs">{form.certificateFile?.name}</div>}
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Photograph (JPG, Max 150KB)</label>
+                        <input
+                          className="input mt-2"
+                          type="file"
+                          accept=".jpg,.jpeg,image/jpeg"
+                          onChange={(e) => setForm({ ...form, photographFile: e.target.files?.[0] || null })}
+                          required
+                        />
+                        {form.photographFile && <div className="muted mt-1 text-xs">{form.photographFile?.name}</div>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="form-section">
+                    <div className="form-section-header">
+                      <div className="form-section-title">Declaration</div>
+                      <div className="form-section-subtitle">Required to submit</div>
+                    </div>
+                    <div className="mt-4 space-y-2 text-sm text-black/70">
+                      <div>1. Credits earned by me shall be assigned to the Institute.</div>
+                      <div>2. If excess payment made to me is noticed, I will pay back.</div>
+                      <div>3. The information furnished by me is correct.</div>
+                    </div>
+                    <label className="mt-4 flex items-center gap-2 text-sm text-black/70">
+                      <input
+                        type="checkbox"
+                        checked={form.declarationAccepted}
+                        onChange={(e) => setForm({ ...form, declarationAccepted: e.target.checked })}
+                        required
+                      />
+                      I agree to the declaration.
+                    </label>
+                  </div>
+
+                  <div className="mt-6 rounded-2xl border border-black/10 bg-white/90 p-3 backdrop-blur">
+                    <div className="flex flex-wrap gap-3">
+                      <button className="btn btn-primary w-full sm:w-auto" type="submit" disabled={isSubmittingApplication}>
+                        {isSubmittingApplication ? "Submitting..." : "Submit Application"}
+                      </button>
+                      <button
+                        className="btn btn-ghost w-full sm:w-auto"
+                        type="button"
+                        disabled={isSubmittingApplication}
+                        onClick={() => setForm({
+                          department: user?.department || "",
+                          applicantName: user?.name || "",
+                          mobileNumber: "",
+                          academicYear: "",
+                          academicYearType: "ODD",
+                          email: normalizeEmail(user?.email || ""),
+                          designation: "",
+                          incentiveClaimCount: DEFAULT_INCENTIVE_CLAIM_COUNT,
+                          coursePlatform: "",
+                          courseTitle: "",
+                          nptelApplicationNumber: "",
+                          courseSession: "",
+                          courseWeeks: "",
+                          courseScore: "",
+                          courseCategory: "",
+                          courseCredits: "",
+                          registrationFeePaid: "",
+                          permissibleClaim: "",
+                          feeReceiptFile: null,
+                          certificateFile: null,
+                          photographFile: null,
+                          declarationAccepted: false
+                        })}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
           {active === "Pending Applications" && (
             <div className="mt-6 animate-slide-up">
               <div className="form-section-header" style={{marginBottom:"1.25rem"}}>
@@ -2045,6 +2588,9 @@ export default function AuthorityDashboard() {
                       </div>
                     )}
                     <div className="mt-5 flex flex-wrap gap-3">
+                      <button className="btn btn-ghost" type="button" onClick={() => setSelectedApplication(app)}>
+                        View Form
+                      </button>
                       <button className="btn btn-primary" type="button" onClick={() => review(app.id, "approve")}>Approve</button>
                       <button className="btn btn-ghost" type="button" onClick={() => review(app.id, "reject")}>Reject</button>
                     </div>
@@ -2079,6 +2625,145 @@ export default function AuthorityDashboard() {
                       type="button"
                       disabled={pendingPageData.currentPage >= pendingPageData.totalPages}
                       onClick={() => setPendingPage((prev) => Math.min(pendingPageData.totalPages, prev + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {active === "My Applications" && (
+            <div className="mt-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold font-display">My Applications</h2>
+                <div className="flex items-center gap-2 text-sm text-[color:var(--ink-soft)]">
+                  <span>{filteredMySubmittedApps.length} total</span>
+                  <button className="btn btn-ghost" type="button" onClick={loadMyApplications}>
+                    Refresh
+                  </button>
+                </div>
+              </div>
+
+              {applicationsNotice && (
+                <div className={`mt-3 text-sm ${applicationsNoticeType === "error" ? "text-rose-600" : "text-emerald-600"}`}>
+                  {applicationsNotice}
+                </div>
+              )}
+
+              <div className="mt-4 w-full lg:max-w-xl">
+                <label className="text-xs uppercase tracking-[0.2em] text-black/40">Search My Applications</label>
+                <input
+                  className="input mt-2"
+                  type="search"
+                  placeholder="Search by name, ID, department, status, or course title"
+                  value={myApplicationsSearch}
+                  onChange={(e) => {
+                    setMyApplicationsSearch(e.target.value);
+                    setMyApplicationsPage(1);
+                  }}
+                />
+              </div>
+
+              <div className="mt-4 grid gap-4">
+                {myApplicationsPageData.rows.map((app) => (
+                  <div key={app.id} className="panel p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">{app.data.applicant_name || app.data.application_name || `Application #${app.id}`}</div>
+                        <div className="muted mt-1 text-xs">ID: {app.id}</div>
+                      </div>
+                      <span className="badge">{statusLabel(app.status)}</span>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                      {flowSteps.map((step, index) => {
+                        const currentIndex = flowSteps.findIndex((s) => s.key === app.status);
+                        const reached = app.status === "approved" || currentIndex >= index;
+                        const isRejected = app.status === "rejected";
+                        return (
+                          <span
+                            key={step.key}
+                            className={`flow-step ${
+                              isRejected
+                                ? "flow-step-rejected"
+                                : reached
+                                  ? "flow-step-done"
+                                  : "flow-step-pending"
+                            }`}
+                          >
+                            {step.label}
+                          </span>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-4 grid gap-3 text-sm text-black/70 md:grid-cols-2">
+                      {[
+                        ["Department", app.data.department],
+                        ["Designation", app.data.designation],
+                        ["Email", app.data.email],
+                        ["Mobile", app.data.mobile_number],
+                        ["Academic Year", formatAcademicYear(app.data.academic_year, "")],
+                        ["Academic Year Type", app.data.academic_year_type],
+                        ["Course", app.data.course_title],
+                        ["Category", app.data.course_category],
+                        ["NPTEL Application No", app.data.nptel_application_number],
+                        ["Platform", app.data.course_platform],
+                        ["Score", app.data.course_score],
+                        ["Credits", app.data.course_credits],
+                        ["Fee Paid", app.data.registration_fee_paid],
+                        ["Permissible Claim", app.data.permissible_claim],
+                        ["Submitted At", app.created_at ? new Date(app.created_at).toLocaleString() : ""]
+                      ]
+                        .filter(([, value]) => hasDisplayText(value))
+                        .map(([label, value]) => (
+                          <div key={label}>
+                            <span className="text-black/50">{label}:</span> {value}
+                          </div>
+                        ))}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap justify-end gap-2">
+                      <button className="btn btn-primary" type="button" onClick={() => setSelectedApplication(app)}>
+                        Application Details
+                      </button>
+                      <button className="btn btn-ghost" type="button" onClick={() => printApplicationForm(app)}>
+                        Print Form PDF
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {filteredMySubmittedApps.length === 0 && (
+                  <div className="muted text-sm">
+                    {myApplicationsSearch.trim()
+                      ? "No submitted applications match your search."
+                      : "No applications submitted yet."}
+                  </div>
+                )}
+              </div>
+
+              {filteredMySubmittedApps.length > 0 && (
+                <div className="mt-4 flex items-center justify-between gap-2">
+                  <div className="muted text-sm">
+                    Page {myApplicationsPageData.currentPage} of {myApplicationsPageData.totalPages}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      disabled={myApplicationsPageData.currentPage <= 1}
+                      onClick={() => setMyApplicationsPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      Prev
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      disabled={myApplicationsPageData.currentPage >= myApplicationsPageData.totalPages}
+                      onClick={() => setMyApplicationsPage((prev) => Math.min(myApplicationsPageData.totalPages, prev + 1))}
                     >
                       Next
                     </button>
@@ -2197,9 +2882,9 @@ export default function AuthorityDashboard() {
                       <button
                         className="btn btn-primary"
                         type="button"
-                        onClick={() => setSelectedApprovedApplication(app)}
+                        onClick={() => setSelectedApplication(app)}
                       >
-                        Details
+                        View Form
                       </button>
                     </div>
                   </div>
@@ -2286,6 +2971,15 @@ export default function AuthorityDashboard() {
                     </div>
                     <div className="mt-2 text-sm text-black/70">
                       <span className="text-black/50">Submitted At:</span> {app.created_at ? new Date(app.created_at).toLocaleString() : "-"}
+                    </div>
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        className="btn btn-primary"
+                        type="button"
+                        onClick={() => setSelectedApplication(app)}
+                      >
+                        View Form
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -2982,11 +3676,20 @@ export default function AuthorityDashboard() {
         onConfirm={deleteAccount}
       />
 
+      <SubmitStatusPopup
+        open={submitPopup.open}
+        type={submitPopup.type}
+        title={submitPopup.title}
+        message={submitPopup.message}
+        onClose={closeSubmitPopup}
+        onViewApplications={submitPopup.type === "success" ? viewApplicationsFromPopup : undefined}
+      />
+
       <ApplicationDetailsPopup
-        open={Boolean(selectedApprovedApplication)}
-        application={selectedApprovedApplication}
+        open={Boolean(selectedApplication)}
+        application={selectedApplication}
         hideEmptyFields
-        onClose={() => setSelectedApprovedApplication(null)}
+        onClose={() => setSelectedApplication(null)}
       />
     </div>
   );

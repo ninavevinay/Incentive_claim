@@ -744,8 +744,8 @@ def create_student_application(owner: User, data: dict) -> Application:
 
 def create_faculty_application(owner: User, data: dict) -> Application:
     enforce_form_window_open()
-    if owner.role != "faculty":
-        raise PermissionDenied("Only faculty can submit this form")
+    if owner.role != "faculty" and owner.role not in AUTHORITY_ROLES:
+        raise PermissionDenied("Only faculty and authority users can submit this form")
 
     payload = _normalize_upload_payload(owner.name, data, include_bank_passbook=False, include_designation=True)
 
@@ -761,7 +761,7 @@ def create_faculty_application(owner: User, data: dict) -> Application:
             owner,
             message=f"{application_reference(app)} received and sent for review.",
             email_subject="Application Received - SBJIT NPTEL Reimburse",
-            email_headline="Your faculty application was submitted successfully and is now under review.",
+            email_headline="Your application was submitted successfully and is now under review.",
             email_details=[
                 f"Application ID: {app.id}",
                 f"Department: {payload['department']}",

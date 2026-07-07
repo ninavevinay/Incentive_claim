@@ -106,6 +106,18 @@ export function DashboardSkeleton({ activeTab }) {
     );
   }
 
+  if (activeTab === "Application Form") {
+    return (
+      <div className="mt-8 animate-slide-up">
+        <Skeleton className="skeleton-text h-7 w-56 mb-4" />
+        <div className="mt-4 grid gap-5">
+          <FormSectionSkeleton />
+          <FormSectionSkeleton />
+        </div>
+      </div>
+    );
+  }
+
   if (activeTab === "Pending Applications" || activeTab === "My Applications" || activeTab === "Total Applications") {
     return (
       <div className="mt-6 animate-slide-up">
