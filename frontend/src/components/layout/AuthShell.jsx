@@ -35,7 +35,6 @@ export default function AuthShell({
               <img src="/logo.jpg" alt="SBJIT" />
               <div>
                 <div className="auth-split-brand-title">SBJIT NPTEL Reimburse</div>
-                <div className="auth-split-brand-sub">Enterprise Portal</div>
               </div>
             </div>
 
