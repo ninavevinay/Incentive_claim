@@ -11,3 +11,12 @@ frontend/dist/
 
 # Environment variables
 .env
+dist/
+node_modules/
+backend/uploads/
+backend/media/
+backend/staticfiles/
+backend/.env
+backend/venv/
+__pycache__/
+*.pyc
