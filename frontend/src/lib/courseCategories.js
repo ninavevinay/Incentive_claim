@@ -17,6 +17,7 @@ export const COURSE_CATEGORY_OPTIONS = [
   "NPTEL Evangelist",
   "NPTEL MEGASTARS",
   "NPTEL CHAMPIONS",
+  "NPTEL Top Performing Mentor",
 ];
 
 export const NPTEL_STAR_CATEGORY_OPTIONS = [
@@ -28,7 +29,8 @@ export const NPTEL_STAR_CATEGORY_OPTIONS = [
   "NPTEL Motivated Learner",
   "NPTEL Evangelist",
   "NPTEL MEGASTARS",
-  "NPTEL CHAMPIONS"
+  "NPTEL CHAMPIONS",
+  "NPTEL Top Performing Mentor",
 ];
 
 export const normalizeCourseCategory = (value) =>
