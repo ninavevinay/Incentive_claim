@@ -7,7 +7,7 @@ import SubmitStatusPopup from "../components/SubmitStatusPopup.jsx";
 import DangerConfirmPopup from "../components/DangerConfirmPopup.jsx";
 import { api, resolveMediaUrl } from "../lib/api.js";
 import { useAuth, logout } from "../lib/auth.jsx";
-import { getApprovedAmount, getInstitutionCoordinatorApprovedAmount } from "../lib/amount.js";
+import { getApprovedAmount, getApprovedAmountByRole, getInstitutionCoordinatorApprovedAmount } from "../lib/amount.js";
 import { formatAcademicYear, isAcademicYearFormat, normalizeAcademicYear } from "../lib/academicYear.js";
 import { exportApplicationFormPdf } from "../lib/applicationFormPdf.js";
 import { drawPdfHeader, getPdfHeaderImageDataUrl } from "../lib/pdfHeader.js";
@@ -357,7 +357,7 @@ export default function AuthorityDashboard() {
   const graphContainerRef = useRef(null);
   const allGraphsPdfRef = useRef(null);
   const menu = user?.role === "institution_coordinator"
-    ? [...baseMenu.slice(0, 6), "Reports", "Notice", "Authority Users", "Form Filling Window", ...baseMenu.slice(6)]
+    ? [...baseMenu.slice(0, 4), "Approved Students", ...baseMenu.slice(4, 6), "Reports", "Notice", "Authority Users", "Form Filling Window", ...baseMenu.slice(6)]
     : baseMenu;
 
   useEffect(() => {
@@ -1135,11 +1135,6 @@ export default function AuthorityDashboard() {
           margin,
           title: "",
           subtitle: "",
-          metadataLines: [
-            `Academic Year: ${exportYearLabel}`,
-            `Academic Year Type: ${exportYearTypeLabel}`,
-            `Department: ${exportDepartmentLabel}`
-          ],
           headerImageDataUrl
         });
         if (showMainTitle) {
@@ -1327,8 +1322,9 @@ export default function AuthorityDashboard() {
 
       const signerNames = [
         "Dr. Rashmi Jain (NPTEL Coordinator)",
-        "Mr. Sanjeev Agrawal (CEO)",
-        "Dr. S. L. Badjate (principal)"
+        "Dr. S. L. Badjate (principal)",
+        "Mr. Sanjeev Agrawal (CEO)"
+
       ];
       const signatureLineY = signatureTop + 58;
       const signatureTextY = signatureLineY + 20;
@@ -2152,12 +2148,12 @@ export default function AuthorityDashboard() {
   };
 
   return (
-    <div className="dashboard-page" style={{background:"var(--bg-base)"}}>
-      <div className="page-container" style={{maxWidth: "none"}}>
+    <div className="dashboard-page" style={{ background: "var(--bg-base)" }}>
+      <div className="page-container" style={{ maxWidth: "none" }}>
         <div className="mb-4 lg:hidden">
           <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-lg" style={{background:"var(--accent-gradient)"}}></div>
-            <span className="text-base font-bold font-display" style={{color:"var(--text-primary)"}}>Authority Portal</span>
+            <div className="h-7 w-7 rounded-lg" style={{ background: "var(--accent-gradient)" }}></div>
+            <span className="text-base font-bold font-display" style={{ color: "var(--text-primary)" }}>Authority Portal</span>
           </div>
         </div>
 
@@ -2166,1490 +2162,1514 @@ export default function AuthorityDashboard() {
             <Sidebar items={menu} active={active} onSelect={handleSelect} user={user} />
           </div>
           <div className="dashboard-content animate-slide-up">
-          <Topbar title="Authority Portal" subtitle={`Welcome, ${user?.name || "Authority"}`} />
+            <Topbar title="Authority Portal" subtitle={`Welcome, ${user?.name || "Authority"}`} />
 
-          {loading ? (
-            <DashboardSkeleton activeTab={active} />
-          ) : (
-            <>
-          {active === "Overview" && (
-            <div className="mt-6 space-y-6">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {[
-                  { label: "Pending", value: apps.length, sub: "Awaiting your action" },
-                  { label: "Total Applications", value: scopedAllApps.length, sub: "In your scope" },
-                  { label: "Role", value: ROLE_LABELS[user?.role] || user?.role, sub: "Active profile", isText: true },
-                  { label: "Department", value: user?.department || "-", sub: "Assigned unit", isText: true }
-                ].map((s) => (
-                  <div key={s.label} className="stat-card animate-slide-up">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-xs uppercase tracking-widest font-medium" style={{color:"var(--text-muted)"}}>{s.label}</span>
-                    </div>
-                    <div className={`font-bold ${s.isText ? "text-lg" : "text-3xl"}`} style={{color:"var(--text-primary)"}}>{s.value}</div>
-                    <div className="mt-1 text-xs" style={{color:"var(--text-muted)"}}>{s.sub}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="form-section">
-                <div className="form-section-header">
-                  <div>
-                    <h3 className="font-semibold font-display text-lg" style={{color:"var(--text-primary)"}}>Applications Summary</h3>
-                    <p className="text-xs mt-1" style={{color:"var(--text-muted)"}}>Live breakdown of all application statuses</p>
-                  </div>
-                  <span className="badge">Live</span>
-                </div>
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  {[
-                    { label: "Pending", value: apps.length, color: "var(--accent-primary)" },
-                    { label: "Total", value: scopedAllApps.length, color: "var(--accent-secondary)" },
-                    { label: "My Approved", value: approvedByMeApps.length, color: "#10b981" },
-                    { label: "Rejected", value: rejectedAppsCount, color: "#f43f5e" }
-                  ].map((item) => (
-                    <div key={item.label} className="rounded-2xl p-4 border" style={{background:"var(--surface-glass)",borderColor:"var(--border-subtle)"}}>
-                      <div className="flex items-center justify-between text-sm font-semibold mb-3" style={{color:"var(--text-primary)"}}>
-                        <span>{item.label}</span>
-                        <span className="text-xl font-bold">{item.value}</span>
-                      </div>
-                      <div className="h-2 w-full rounded-full" style={{background:"var(--border-subtle)"}}>
-                        <div className="h-2 rounded-full transition-all duration-700" style={{
-                          width:`${Math.min(100,Math.round((item.value/Math.max(scopedAllApps.length,1))*100))}%`,
-                          background:item.color
-                        }}/>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {active === "Application Form" && (
-            <div className="mt-8 animate-slide-up">
-              <div className="form-section">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-xl font-bold font-display" style={{ color: "var(--text-primary)" }}>
-                      Application Form
-                    </h2>
-                    <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>
-                      Submit your reimbursement application with the same review workflow used across the portal.
-                    </p>
-                  </div>
-                  <span className="badge">Live</span>
-                </div>
-
-                <form onSubmit={submitApplication} className="mt-6 space-y-5 pb-24 sm:mt-8 sm:space-y-6">
-                  <div className="form-section">
-                    <div className="form-section-header">
-                      <div className="form-section-title">Applicant Details</div>
-                      <div className="form-section-subtitle">Authority profile</div>
-                    </div>
-                    <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Department</label>
-                        <input className="input mt-2 bg-black/5" value={form.department} readOnly required />
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Applicant Name</label>
-                        <input className="input mt-2 bg-black/5 font-semibold" value={toUpperText(form.applicantName)} readOnly required />
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Mobile Number</label>
-                        <input className="input mt-2" value={form.mobileNumber} onChange={(e) => setForm({ ...form, mobileNumber: e.target.value })} required />
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Email ID</label>
-                        <input className="input mt-2 bg-black/5" type="email" value={form.email} readOnly required />
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Designation</label>
-                        <input className="input mt-2" value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} required />
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year</label>
-                        <input
-                          className="input mt-2"
-                          value={form.academicYear}
-                          onChange={(e) => setForm({ ...form, academicYear: e.target.value })}
-                          onBlur={(e) => setForm((prev) => ({ ...prev, academicYear: normalizeAcademicYear(e.target.value) }))}
-                          required
-                          placeholder="eg., 2023 - 2024"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year Type</label>
-                        <div className="mt-3 flex flex-wrap gap-4 text-sm text-black/70">
-                          {["ODD", "EVEN"].map((yearType) => (
-                            <label key={yearType} className="flex items-center gap-2">
-                              <input
-                                type="radio"
-                                name="authorityAcademicYearType"
-                                value={yearType}
-                                checked={form.academicYearType === yearType}
-                                onChange={(e) => setForm({ ...form, academicYearType: e.target.value })}
-                              />
-                              {yearType}
-                            </label>
-                          ))}
+            {loading ? (
+              <DashboardSkeleton activeTab={active} />
+            ) : (
+              <>
+                {active === "Overview" && (
+                  <div className="mt-6 space-y-6">
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                      {[
+                        { label: "Pending", value: apps.length, sub: "Awaiting your action" },
+                        { label: "Total Applications", value: scopedAllApps.length, sub: "In your scope" },
+                        { label: "Role", value: ROLE_LABELS[user?.role] || user?.role, sub: "Active profile", isText: true },
+                        { label: "Department", value: user?.department || "-", sub: "Assigned unit", isText: true }
+                      ].map((s) => (
+                        <div key={s.label} className="stat-card animate-slide-up">
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-xs uppercase tracking-widest font-medium" style={{ color: "var(--text-muted)" }}>{s.label}</span>
+                          </div>
+                          <div className={`font-bold ${s.isText ? "text-lg" : "text-3xl"}`} style={{ color: "var(--text-primary)" }}>{s.value}</div>
+                          <div className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>{s.sub}</div>
                         </div>
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Incentive Claims This Academic Year</label>
-                        <select
-                          className="input mt-2"
-                          value={form.incentiveClaimCount}
-                          onChange={(e) => setForm({ ...form, incentiveClaimCount: e.target.value })}
-                          required
-                        >
-                          {INCENTIVE_CLAIM_OPTIONS.map((count) => (
-                            <option key={count} value={count}>
-                              {count}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Category</label>
-                        <select
-                          className="input mt-2"
-                          value={form.courseCategory}
-                          onChange={(e) => setForm({ ...form, courseCategory: e.target.value })}
-                          required
-                        >
-                          <option value="" disabled>Select category</option>
-                          {COURSE_CATEGORY_OPTIONS.map((option) => (
-                            <option key={option} value={option}>{option}</option>
-                          ))}
-                        </select>
-                      </div>
+                      ))}
                     </div>
-                  </div>
 
-                  {showCourseDetails && (
-                    <div ref={courseSectionsRef} className="space-y-5">
-                      <div className="form-section">
-                        <div className="form-section-header">
-                          <div className="form-section-title">Course Details</div>
-                          <div className="form-section-subtitle">Certification information</div>
-                        </div>
-                        <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
-                          <div>
-                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Platform</label>
-                            <input className="input mt-2" placeholder="Enter platform (e.g., NPTEL, Coursera)" value={form.coursePlatform} onChange={(e) => setForm({ ...form, coursePlatform: e.target.value })} required />
-                          </div>
-                          <div>
-                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Title of Course</label>
-                            <input className="input mt-2" placeholder="Enter course title" value={form.courseTitle} onChange={(e) => setForm({ ...form, courseTitle: e.target.value })} required />
-                          </div>
-                          <div>
-                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">NPTEL Roll Number</label>
-                            <input
-                              className="input mt-2 uppercase"
-                              value={form.nptelApplicationNumber}
-                              onChange={(e) => setForm({ ...form, nptelApplicationNumber: toUpperText(e.target.value) })}
-                              required
-                              placeholder="e.g., NPTEL-APP-12345"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Session</label>
-                            <input className="input mt-2" value={form.courseSession} onChange={(e) => setForm({ ...form, courseSession: e.target.value })} required />
-                          </div>
-                          <div>
-                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Number of Weeks</label>
-                            <input className="input mt-2" type="number" min="1" value={form.courseWeeks} onChange={(e) => setForm({ ...form, courseWeeks: e.target.value })} required />
-                          </div>
-                          <div>
-                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Score</label>
-                            <input className="input mt-2" value={form.courseScore} onChange={(e) => setForm({ ...form, courseScore: e.target.value })} required />
-                          </div>
-                          <div>
-                            <label className="text-xs uppercase tracking-[0.2em] text-black/40">Credits</label>
-                            <input className="input mt-2" type="number" min="0" value={form.courseCredits} onChange={(e) => setForm({ ...form, courseCredits: e.target.value })} required />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {showRegistrationDetails && (
                     <div className="form-section">
                       <div className="form-section-header">
-                        <div className="form-section-title">Registration Details</div>
-                        <div className="form-section-subtitle">Fee + claim</div>
-                      </div>
-                      <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
                         <div>
-                          <label className="text-xs uppercase tracking-[0.2em] text-black/40">Registration Fee Paid (Rs)</label>
-                          <input className="input mt-2" type="number" min="0" value={form.registrationFeePaid} onChange={(e) => setForm({ ...form, registrationFeePaid: e.target.value })} required />
+                          <h3 className="font-semibold font-display text-lg" style={{ color: "var(--text-primary)" }}>Applications Summary</h3>
+                          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Live breakdown of all application statuses</p>
                         </div>
-                        <div>
-                          <label className="text-xs uppercase tracking-[0.2em] text-black/40">Permissible Claim (Rs)</label>
-                          <input className="input mt-2" type="number" min="0" value={form.permissibleClaim} onChange={(e) => setForm({ ...form, permissibleClaim: e.target.value })} required />
-                        </div>
+                        <span className="badge">Live</span>
                       </div>
-                    </div>
-                  )}
-
-                  <div className="form-section">
-                    <div className="form-section-header">
-                      <div className="form-section-title">Documents Attached</div>
-                      <div className="form-section-subtitle">Upload proofs</div>
-                    </div>
-                    <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      {showCourseDetails && (
-                        <div>
-                          <label className="text-xs uppercase tracking-[0.2em] text-black/40">Fee Payment Receipt (Max 150KB)</label>
-                          <input
-                            className="input mt-2"
-                            type="file"
-                            accept=".pdf,application/pdf"
-                            onChange={(e) => setForm({ ...form, feeReceiptFile: e.target.files?.[0] || null })}
-                            required
-                          />
-                          {form.feeReceiptFile && <div className="muted mt-1 text-xs">{form.feeReceiptFile?.name}</div>}
-                        </div>
-                      )}
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Certificate From Certification Authority (Max 150KB)</label>
-                        <input
-                          className="input mt-2"
-                          type="file"
-                          accept=".pdf,application/pdf"
-                          onChange={(e) => setForm({ ...form, certificateFile: e.target.files?.[0] || null })}
-                          required
-                        />
-                        {form.certificateFile && <div className="muted mt-1 text-xs">{form.certificateFile?.name}</div>}
-                      </div>
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Photograph (JPG, Max 150KB)</label>
-                        <input
-                          className="input mt-2"
-                          type="file"
-                          accept=".jpg,.jpeg,image/jpeg"
-                          onChange={(e) => setForm({ ...form, photographFile: e.target.files?.[0] || null })}
-                          required
-                        />
-                        {form.photographFile && <div className="muted mt-1 text-xs">{form.photographFile?.name}</div>}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="form-section">
-                    <div className="form-section-header">
-                      <div className="form-section-title">Declaration</div>
-                      <div className="form-section-subtitle">Required to submit</div>
-                    </div>
-                    <div className="mt-4 space-y-2 text-sm text-black/70">
-                      <div>1. Credits earned by me shall be assigned to the Institute.</div>
-                      <div>2. If excess payment made to me is noticed, I will pay back.</div>
-                      <div>3. The information furnished by me is correct.</div>
-                    </div>
-                    <label className="mt-4 flex items-center gap-2 text-sm text-black/70">
-                      <input
-                        type="checkbox"
-                        checked={form.declarationAccepted}
-                        onChange={(e) => setForm({ ...form, declarationAccepted: e.target.checked })}
-                        required
-                      />
-                      I agree to the declaration.
-                    </label>
-                  </div>
-
-                  <div className="mt-6 rounded-2xl border border-black/10 bg-white/90 p-3 backdrop-blur">
-                    <div className="flex flex-wrap gap-3">
-                      <button className="btn btn-primary w-full sm:w-auto" type="submit" disabled={isSubmittingApplication}>
-                        {isSubmittingApplication ? "Submitting..." : "Submit Application"}
-                      </button>
-                      <button
-                        className="btn btn-ghost w-full sm:w-auto"
-                        type="button"
-                        disabled={isSubmittingApplication}
-                        onClick={() => setForm({
-                          department: user?.department || "",
-                          applicantName: user?.name || "",
-                          mobileNumber: "",
-                          academicYear: "",
-                          academicYearType: "ODD",
-                          email: normalizeEmail(user?.email || ""),
-                          designation: "",
-                          incentiveClaimCount: DEFAULT_INCENTIVE_CLAIM_COUNT,
-                          coursePlatform: "",
-                          courseTitle: "",
-                          nptelApplicationNumber: "",
-                          courseSession: "",
-                          courseWeeks: "",
-                          courseScore: "",
-                          courseCategory: "",
-                          courseCredits: "",
-                          registrationFeePaid: "",
-                          permissibleClaim: "",
-                          feeReceiptFile: null,
-                          certificateFile: null,
-                          photographFile: null,
-                          declarationAccepted: false
-                        })}
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {active === "Pending Applications" && (
-            <div className="mt-6 animate-slide-up">
-              <div className="form-section-header" style={{marginBottom:"1.25rem"}}>
-                <div>
-                  <h2 className="text-xl font-bold font-display" style={{color:"var(--text-primary)"}}>Pending Applications</h2>
-                  <p className="text-xs mt-1" style={{color:"var(--text-muted)"}}>{filteredPendingApps.length} application(s) awaiting review</p>
-                </div>
-                <button className="btn btn-ghost" type="button" onClick={refresh}>Refresh</button>
-              </div>
-              <div className="mt-4 w-full lg:max-w-xl">
-                <label className="text-xs uppercase tracking-[0.2em] text-black/40">Search Pending Applications</label>
-                <input
-                  className="input mt-2"
-                  type="search"
-                  placeholder="Search by name, ID, USN, department, course title"
-                  value={pendingSearch}
-                  onChange={(e) => {
-                    setPendingSearch(e.target.value);
-                    setPendingPage(1);
-                  }}
-                />
-              </div>
-              {message && <div className="mt-3 rounded-xl px-4 py-2 text-sm font-medium" style={{background:"rgba(16,185,129,0.1)",color:"#10b981",border:"1px solid rgba(16,185,129,0.2)"}}>{message}</div>}
-              <div className="mt-4 grid gap-5">
-                {pendingPageData.rows.map((app) => (
-                  <div key={app.id} className="form-section animate-slide-up">
-                    <div className="flex items-center justify-between">
-                      <div className="font-bold text-base" style={{color:"var(--text-primary)"}}>{app.data.applicant_name || app.data.application_name || `Application #${app.id}`}</div>
-                      <span className="badge">{app.status}</span>
-                    </div>
-                    <div className="mt-1 text-xs" style={{color:"var(--text-muted)"}}>
-                      {app.application_type ? `ID: ${app.id} | Type: ${app.application_type}` : `ID: ${app.id}`}
-                    </div>
-                    <div className="mt-4 grid gap-3 text-sm md:grid-cols-2" style={{color:"var(--text-secondary)"}}>
-                      {[
-                        ["Applicant", app.data.applicant_name || app.data.application_name || ""],
-                        ["Department", app.data.department],
-                        ["USN", app.data.usn],
-                        ["Email", app.data.email],
-                        ["Mobile", app.data.mobile_number],
-                        ["Designation", app.data.designation],
-                        ["Semester", app.data.semester],
-                        ["Academic Year", formatAcademicYear(app.data.academic_year, "")],
-                        ["Academic Year Type", app.data.academic_year_type],
-                        ["Claims", app.data.incentive_claim_count],
-                        ["Course", app.data.course_title],
-                        ["NPTEL Roll Number", app.data.nptel_application_number],
-                        ["Platform", app.data.course_platform],
-                        ["Session", app.data.course_session],
-                        ["Weeks", app.data.course_weeks],
-                        ["Score", app.data.course_score],
-                        ["Category", app.data.course_category],
-                        ["Credits", app.data.course_credits],
-                        ["Fee Paid", app.data.registration_fee_paid],
-                        ["Permissible Claim", app.data.permissible_claim],
-                        ["Bank Acct", app.data.bank_account_number],
-                        ["Bank IFSC", app.data.bank_ifsc],
-                        ["Bank Branch", app.data.bank_branch],
-                        ["Bank Name", app.data.bank_name],
-                        ["Declaration", app.data.declaration_accepted ? "Yes" : "No"]
-                      ]
-                        .filter(([, val]) => isDisplayValue(val))
-                        .map(([lbl, val]) => (
-                          <div key={lbl}><span style={{color:"var(--text-muted)"}}>{lbl}:</span> {val}</div>
-                        ))}
-                      {[
-                        ["Fee Receipt", app.data.fee_receipt_file],
-                        ["Certificate", app.data.certificate_file],
-                        ["Bank Passbook", app.data.bank_passbook_file],
-                        ["Photograph", app.data.photograph_file],
-                        ["Signature", app.data.signature_file]
-                      ]
-                        .filter(([, path]) => isDisplayValue(path))
-                        .map(([lbl, path]) => (
-                          <div key={lbl}><span style={{color:"var(--text-muted)"}}>{lbl}:</span> {docLink(path)}</div>
-                        ))}
-                    </div>
-                    <div className="mt-5 pt-4" style={{borderTop:"1px solid var(--border-subtle)"}}>
-                      <label className="text-xs uppercase tracking-widest font-medium" style={{color:"var(--text-muted)"}}>Rejection Remark (required)</label>
-                      <textarea className="input mt-2 h-24" value={rejectRemarks[app.id] || ""} onChange={(e) => setRejectRemarks((prev) => ({ ...prev, [app.id]: e.target.value }))} />
-                    </div>
-                    {user?.role === "institution_coordinator" && (
-                      <div className="mt-4">
-                        <label className="text-xs uppercase tracking-widest font-medium" style={{color:"var(--text-muted)"}}>Approved Amount (Rs)</label>
-                        <input className="input mt-2" type="number" min="0" step="0.01" value={approveAmounts[app.id] || ""} onChange={(e) => setApproveAmounts((prev) => ({ ...prev, [app.id]: e.target.value }))} />
-                      </div>
-                    )}
-                    <div className="mt-5 flex flex-wrap gap-3">
-                      <button className="btn btn-ghost" type="button" onClick={() => setSelectedApplication(app)}>
-                        View Form
-                      </button>
-                      <button className="btn btn-primary" type="button" onClick={() => review(app.id, "approve")}>Approve</button>
-                      <button className="btn btn-ghost" type="button" onClick={() => review(app.id, "reject")}>Reject</button>
-                    </div>
-                  </div>
-                ))}
-                {filteredPendingApps.length === 0 && (
-                  <div className="form-section text-center py-8">
-                    <div className="text-sm font-medium" style={{color:"var(--text-muted)"}}>
-                      {pendingSearch.trim()
-                        ? "No pending applications match your search."
-                        : "No pending applications - you're all caught up!"}
-                    </div>
-                  </div>
-                )}
-              </div>
-              {filteredPendingApps.length > 0 && (
-                <div className="mt-4 flex items-center justify-between gap-2">
-                  <div className="muted text-sm">
-                    Page {pendingPageData.currentPage} of {pendingPageData.totalPages}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="btn btn-ghost"
-                      type="button"
-                      disabled={pendingPageData.currentPage <= 1}
-                      onClick={() => setPendingPage((prev) => Math.max(1, prev - 1))}
-                    >
-                      Prev
-                    </button>
-                    <button
-                      className="btn btn-ghost"
-                      type="button"
-                      disabled={pendingPageData.currentPage >= pendingPageData.totalPages}
-                      onClick={() => setPendingPage((prev) => Math.min(pendingPageData.totalPages, prev + 1))}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {active === "My Applications" && (
-            <div className="mt-8">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-xl font-semibold font-display">My Applications</h2>
-                <div className="flex items-center gap-2 text-sm text-[color:var(--ink-soft)]">
-                  <span>{filteredMySubmittedApps.length} total</span>
-                  <button className="btn btn-ghost" type="button" onClick={loadMyApplications}>
-                    Refresh
-                  </button>
-                </div>
-              </div>
-
-              {applicationsNotice && (
-                <div className={`mt-3 text-sm ${applicationsNoticeType === "error" ? "text-rose-600" : "text-emerald-600"}`}>
-                  {applicationsNotice}
-                </div>
-              )}
-
-              <div className="mt-4 w-full lg:max-w-xl">
-                <label className="text-xs uppercase tracking-[0.2em] text-black/40">Search My Applications</label>
-                <input
-                  className="input mt-2"
-                  type="search"
-                  placeholder="Search by name, ID, department, status, or course title"
-                  value={myApplicationsSearch}
-                  onChange={(e) => {
-                    setMyApplicationsSearch(e.target.value);
-                    setMyApplicationsPage(1);
-                  }}
-                />
-              </div>
-
-              <div className="mt-4 grid gap-4">
-                {myApplicationsPageData.rows.map((app) => (
-                  <div key={app.id} className="panel p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="font-semibold">{app.data.applicant_name || app.data.application_name || `Application #${app.id}`}</div>
-                        <div className="muted mt-1 text-xs">ID: {app.id}</div>
-                      </div>
-                      <span className="badge">{statusLabel(app.status)}</span>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                      {flowSteps.map((step, index) => {
-                        const currentIndex = flowSteps.findIndex((s) => s.key === app.status);
-                        const reached = app.status === "approved" || currentIndex >= index;
-                        const isRejected = app.status === "rejected";
-                        return (
-                          <span
-                            key={step.key}
-                            className={`flow-step ${
-                              isRejected
-                                ? "flow-step-rejected"
-                                : reached
-                                  ? "flow-step-done"
-                                  : "flow-step-pending"
-                            }`}
-                          >
-                            {step.label}
-                          </span>
-                        );
-                      })}
-                    </div>
-
-                    <div className="mt-4 grid gap-3 text-sm text-black/70 md:grid-cols-2">
-                      {[
-                        ["Department", app.data.department],
-                        ["Designation", app.data.designation],
-                        ["Email", app.data.email],
-                        ["Mobile", app.data.mobile_number],
-                        ["Academic Year", formatAcademicYear(app.data.academic_year, "")],
-                        ["Academic Year Type", app.data.academic_year_type],
-                        ["Course", app.data.course_title],
-                        ["Category", app.data.course_category],
-                        ["NPTEL Application No", app.data.nptel_application_number],
-                        ["Platform", app.data.course_platform],
-                        ["Score", app.data.course_score],
-                        ["Credits", app.data.course_credits],
-                        ["Fee Paid", app.data.registration_fee_paid],
-                        ["Permissible Claim", app.data.permissible_claim],
-                        ["Submitted At", app.created_at ? new Date(app.created_at).toLocaleString() : ""]
-                      ]
-                        .filter(([, value]) => hasDisplayText(value))
-                        .map(([label, value]) => (
-                          <div key={label}>
-                            <span className="text-black/50">{label}:</span> {value}
-                          </div>
-                        ))}
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap justify-end gap-2">
-                      <button className="btn btn-primary" type="button" onClick={() => setSelectedApplication(app)}>
-                        Application Details
-                      </button>
-                      <button className="btn btn-ghost" type="button" onClick={() => printApplicationForm(app)}>
-                        Print Form PDF
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
-                {filteredMySubmittedApps.length === 0 && (
-                  <div className="muted text-sm">
-                    {myApplicationsSearch.trim()
-                      ? "No submitted applications match your search."
-                      : "No applications submitted yet."}
-                  </div>
-                )}
-              </div>
-
-              {filteredMySubmittedApps.length > 0 && (
-                <div className="mt-4 flex items-center justify-between gap-2">
-                  <div className="muted text-sm">
-                    Page {myApplicationsPageData.currentPage} of {myApplicationsPageData.totalPages}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="btn btn-ghost"
-                      type="button"
-                      disabled={myApplicationsPageData.currentPage <= 1}
-                      onClick={() => setMyApplicationsPage((prev) => Math.max(1, prev - 1))}
-                    >
-                      Prev
-                    </button>
-                    <button
-                      className="btn btn-ghost"
-                      type="button"
-                      disabled={myApplicationsPageData.currentPage >= myApplicationsPageData.totalPages}
-                      onClick={() => setMyApplicationsPage((prev) => Math.min(myApplicationsPageData.totalPages, prev + 1))}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {active === "My Approved Applications" && (
-            <div className="mt-8">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-xl font-semibold font-display">My Approved Applications</h2>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button className="btn btn-ghost" type="button" onClick={refreshApprovedOnly}>Refresh</button>
-                  {user?.role === "institution_coordinator" && (
-                    <>
-                      <button className="btn btn-ghost" type="button" onClick={exportApprovedApplicationsExcel}>
-                        Export Excel
-                      </button>
-                      <button className="btn btn-ghost" type="button" onClick={exportApprovedApplicationsPdf}>
-                        Export PDF
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-              <div className="mt-4 w-full lg:max-w-xl">
-                <label className="text-xs uppercase tracking-[0.2em] text-black/40">Search Approved Applications</label>
-                <input
-                  className="input mt-2"
-                  type="search"
-                  placeholder="Search by name, ID, department, course title"
-                  value={approvedSearch}
-                  onChange={(e) => {
-                    setApprovedSearch(e.target.value);
-                    setApprovedPage(1);
-                  }}
-                />
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:max-w-5xl lg:grid-cols-3">
-                <div>
-                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year</label>
-                  <select
-                    className="input mt-2"
-                    value={reportApprovedYearFilter}
-                    onChange={(e) => {
-                      setReportApprovedYearFilter(e.target.value);
-                      setApprovedPage(1);
-                    }}
-                  >
-                    <option value="all">All Academic Years</option>
-                    {approvedByMeYearOptions.map((year) => (
-                      <option key={year} value={year}>{year}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year Type</label>
-                  <select
-                    className="input mt-2"
-                    value={reportApprovedYearTypeFilter}
-                    onChange={(e) => {
-                      setReportApprovedYearTypeFilter(e.target.value);
-                      setApprovedPage(1);
-                    }}
-                  >
-                    <option value="all">All Types</option>
-                    {approvedByMeYearTypeOptions.map((type) => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">Department</label>
-                  <select
-                    className="input mt-2"
-                    value={reportApprovedDepartmentFilter}
-                    onChange={(e) => {
-                      setReportApprovedDepartmentFilter(e.target.value);
-                      setApprovedPage(1);
-                    }}
-                  >
-                    <option value="all">All Departments</option>
-                    {approvedByMeDepartmentOptions.map((department) => (
-                      <option key={department} value={department}>{department}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="mt-4 grid gap-4">
-                {approvedPageData.rows.map((app) => (
-                  <div key={app.id} className="panel p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold">{app.data.applicant_name || app.data.application_name || `Application #${app.id}`}</div>
-                      <span className="badge">{app.status}</span>
-                    </div>
-                    <div className="muted mt-2 text-xs">ID: {app.id}</div>
-                    <div className="mt-3 grid gap-2 text-sm text-black/70">
-                      {[
-                        { label: "Department", value: app.data.department || "" },
-                        { label: "Academic Year", value: formatAcademicYear(app.data?.academic_year, "") },
-                        { label: "Academic Year Type", value: toAcademicYearType(app.data?.academic_year_type) },
-                        { label: "Category", value: app.data.course_category || "" },
-                        { label: "Submitted At", value: app.created_at ? new Date(app.created_at).toLocaleString() : "" },
-                        { label: "Approved Amount", value: getInstitutionCoordinatorApprovedAmount(app) }
-                      ]
-                        .filter((item) => hasDisplayText(item.value))
-                        .map((item) => (
-                          <div key={item.label}>
-                            <span className="text-black/50">{item.label}:</span> {item.value}
-                          </div>
-                        ))}
-                    </div>
-                    <div className="mt-4 flex justify-end">
-                      <button
-                        className="btn btn-primary"
-                        type="button"
-                        onClick={() => setSelectedApplication(app)}
-                      >
-                        View Form
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {filteredApprovedByMeApps.length === 0 && (
-                  <div className="muted text-sm">
-                    {approvedSearch.trim()
-                      ? "No approved applications match your search and filters."
-                      : "No applications found for the selected filters."}
-                  </div>
-                )}
-              </div>
-              {filteredApprovedByMeApps.length > 0 && (
-                <div className="mt-4 flex items-center justify-between gap-2">
-                  <div className="muted text-sm">
-                    Page {approvedPageData.currentPage} of {approvedPageData.totalPages}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="btn btn-ghost"
-                      type="button"
-                      disabled={approvedPageData.currentPage <= 1}
-                      onClick={() => setApprovedPage((prev) => Math.max(1, prev - 1))}
-                    >
-                      Prev
-                    </button>
-                    <button
-                      className="btn btn-ghost"
-                      type="button"
-                      disabled={approvedPageData.currentPage >= approvedPageData.totalPages}
-                      onClick={() => setApprovedPage((prev) => Math.min(approvedPageData.totalPages, prev + 1))}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {active === "Total Applications" && (
-            <div className="mt-8">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-xl font-semibold font-display">Total Applications</h2>
-                <div className="w-full sm:w-72">
-                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">Status Filter</label>
-                  <select
-                    className="input mt-2"
-                    value={totalStatusFilter}
-                    onChange={(e) => {
-                      setTotalStatusFilter(e.target.value);
-                      setTotalPage(1);
-                    }}
-                  >
-                    <option value="all">All Applications</option>
-                    <option value="approved">Approved Applications</option>
-                    <option value="rejected">Rejected Applications</option>
-                  </select>
-                </div>
-              </div>
-              <div className="mt-4 w-full lg:max-w-xl">
-                <label className="text-xs uppercase tracking-[0.2em] text-black/40">Search Total Applications</label>
-                <input
-                  className="input mt-2"
-                  type="search"
-                  placeholder="Search by name, ID, department, status, course title"
-                  value={totalSearch}
-                  onChange={(e) => {
-                    setTotalSearch(e.target.value);
-                    setTotalPage(1);
-                  }}
-                />
-              </div>
-              <div className="mt-4 grid gap-4">
-                {totalPageData.rows.map((app) => (
-                  <div key={app.id} className="panel p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold">{app.data.applicant_name || app.data.application_name || "-"}</div>
-                      <span className="badge">{app.status}</span>
-                    </div>
-                    <div className="muted mt-2 text-xs">ID: {app.id}</div>
-                    <div className="mt-3 text-sm text-black/70">
-                      <span className="text-black/50">Department:</span> {app.data.department || "-"}
-                    </div>
-                    <div className="mt-2 text-sm text-black/70">
-                      <span className="text-black/50">Submitted At:</span> {app.created_at ? new Date(app.created_at).toLocaleString() : "-"}
-                    </div>
-                    <div className="mt-4 flex justify-end">
-                      <button
-                        className="btn btn-primary"
-                        type="button"
-                        onClick={() => setSelectedApplication(app)}
-                      >
-                        View Form
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {filteredTotalApps.length === 0 && (
-                  <div className="muted text-sm">
-                    {totalSearch.trim()
-                      ? "No applications match your search and filter."
-                      : "No applications."}
-                  </div>
-                )}
-              </div>
-              {filteredTotalApps.length > 0 && (
-                <div className="mt-4 flex items-center justify-between gap-2">
-                  <div className="muted text-sm">
-                    Page {totalPageData.currentPage} of {totalPageData.totalPages}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="btn btn-ghost"
-                      type="button"
-                      disabled={totalPageData.currentPage <= 1}
-                      onClick={() => setTotalPage((prev) => Math.max(1, prev - 1))}
-                    >
-                      Prev
-                    </button>
-                    <button
-                      className="btn btn-ghost"
-                      type="button"
-                      disabled={totalPageData.currentPage >= totalPageData.totalPages}
-                      onClick={() => setTotalPage((prev) => Math.min(totalPageData.totalPages, prev + 1))}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {active === "Reports" && user?.role === "institution_coordinator" && (
-            <div className="mt-8">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-xl font-semibold font-display">Real-Time Reports Dashboard</h2>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button className="btn btn-ghost" type="button" onClick={refresh}>Refresh</button>
-                  <button className="btn btn-ghost" type="button" onClick={exportReportPdf}>Export PDF</button>
-                  <button className="btn btn-ghost" type="button" onClick={exportGraphPdf}>Graph PDF (A4)</button>
-                </div>
-              </div>
-
-              <div className="mt-4 panel p-4">
-                <div className="text-xs text-[color:var(--ink-soft)]">
-                  All graphs and reports on one page. Auto-refresh updates every 5 seconds.
-                </div>
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className="stat-card p-3 text-sm">
-                    <div className="stat-card-label">Total Applications</div>
-                    <div className="stat-card-value text-xl">{reportTotalCount}</div>
-                  </div>
-                  <div className="stat-card p-3 text-sm">
-                    <div className="stat-card-label">Pending</div>
-                    <div className="stat-card-value text-xl">{reportPendingCount}</div>
-                  </div>
-                  <div className="stat-card p-3 text-sm">
-                    <div className="stat-card-label">Approved</div>
-                    <div className="stat-card-value text-xl">{reportApprovedApps.length}</div>
-                  </div>
-                  <div className="stat-card p-3 text-sm">
-                    <div className="stat-card-label">Approved Total (Rs)</div>
-                    <div className="stat-card-value text-xl">{formatRs(reportApprovedTotalAmount)}</div>
-                  </div>
-                </div>
-
-                <div ref={graphContainerRef} className="mt-6 space-y-6">
-                  <div className="flex flex-wrap items-end gap-3">
-                    <div>
-                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
-                        Academic Year Filter
-                      </label>
-                      <select className="input" value={reportYearFilter} onChange={(e) => setReportYearFilter(e.target.value)}>
-                        <option value="all">All Academic Years</option>
-                        {yearWiseDropdownOptions.map((item) => (
-                          <option key={item.year} value={item.year}>{item.year}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid min-w-0 gap-4 xl:grid-cols-2">
-                    {renderPieCard("Application Status Pie Graph", reportBreakdown, statusPieSegments, reportTotalCount)}
-                    {renderPieCard(
-                      "Academic Year and Academic Year Type Wise Pie Graph",
-                      academicYearData,
-                      academicYearSegments,
-                      academicYearTotal
-                    )}
-                    {renderPieCard(
-                      "Department Wise Applications Pie Graph",
-                      departmentWiseData,
-                      departmentWiseSegments,
-                      departmentWiseTotal,
-                      "No department applications."
-                    )}
-                    {renderPieCard(
-                      "Faculty vs Student Applications Pie Graph",
-                      applicationTypeData,
-                      applicationTypeSegments,
-                      applicationTypeTotal,
-                      "No application type data."
-                    )}
-                    {renderPieCard("Category Wise Pie Graph", categoryWiseData, categoryWiseSegments, categoryWiseTotal)}
-                    {renderPieCard("Feedback Rating Pie Graph", feedbackData, feedbackSegments, feedbackTotal, "No feedback submissions yet.")}
-                    {renderPieCard(`Last Year (${lastYear}) Pie Graph`, lastYearStatusData, lastYearSegments, lastYearTotal, `No applications in ${lastYear}`)}
-                    {renderPieCard(`${selectedYearLabel} Status Pie Graph`, selectedYearStatusData, selectedYearStatusSegments, selectedYearStatusTotal)}
-                  </div>
-
-                  {renderMonthlyTrendCard()}
-                  {renderYearWiseLineCard()}
-
-                  <div className="overflow-x-auto">
-                    <h3 className="mb-3 text-sm font-semibold text-[color:var(--ink)]">Year Wise Application Summary</h3>
-                    <table className="data-table min-w-[860px]">
-                      <thead>
-                        <tr>
-                          <th>Academic Year</th>
-                          <th>Total</th>
-                          <th>Pending</th>
-                          <th>Approved</th>
-                          <th>Rejected</th>
-                          <th>Approved Rs</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {yearWiseSummary.map((row) => (
-                          <tr key={row.year}>
-                            <td className="font-medium">{row.year}</td>
-                            <td>{row.total}</td>
-                            <td>{row.pending}</td>
-                            <td>{row.approved}</td>
-                            <td>{row.rejected}</td>
-                            <td>{formatRs(row.approvedAmount)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {yearWiseSummary.length === 0 && (
-                      <div className="mt-3 text-sm text-[color:var(--ink-soft)]">No academic year records available.</div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-8 grid min-h-0 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
-                  <aside className="panel space-y-4 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">Approved Student Search</div>
-                    <div>
-                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
-                        Search by Name
-                      </label>
-                      <input
-                        className="input"
-                        placeholder="Student name"
-                        value={reportStudentSearch}
-                        onChange={(e) => setReportStudentSearch(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
-                        Academic Year
-                      </label>
-                      <select
-                        className="input"
-                        value={reportStudentYearFilter}
-                        onChange={(e) => setReportStudentYearFilter(e.target.value)}
-                      >
-                        <option value="all">All Academic Years</option>
-                        {studentYearOptions.map((year) => (
-                          <option key={year} value={year}>{year}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
-                        Category
-                      </label>
-                      <select
-                        className="input"
-                        value={reportStudentCategoryFilter}
-                        onChange={(e) => setReportStudentCategoryFilter(e.target.value)}
-                      >
-                        <option value="all">All Categories</option>
-                        {studentCategoryOptions.map((category) => (
-                          <option key={category} value={category}>{category}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-2 text-sm">
-                      <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--paper-strong)] px-3 py-2">
-                        <span className="text-[color:var(--ink-soft)]">Total Approved:</span> {studentReportRows.length}
-                      </div>
-                      <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--paper-strong)] px-3 py-2">
-                        <span className="text-[color:var(--ink-soft)]">Filtered:</span> {filteredStudentRows.length}
-                      </div>
-                      <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--paper-strong)] px-3 py-2">
-                        <span className="text-[color:var(--ink-soft)]">Approved Total (Rs):</span> {formatRs(filteredStudentApprovedAmount)}
-                      </div>
-                    </div>
-                    <button className="btn btn-ghost w-full" type="button" onClick={exportStudentSectionExcel}>
-                      Export Excel
-                    </button>
-                  </aside>
-
-                  <div className="panel p-4">
-                    <h3 className="text-sm font-semibold text-[color:var(--ink)]">Approved Students</h3>
-                    <div className="mt-3 overflow-x-auto">
-                      <table className="data-table min-w-[720px]">
-                        <thead>
-                          <tr>
-                            <th>Name</th>
-                            <th>Academic Year</th>
-                            <th>Department</th>
-                            <th>Category</th>
-                            <th>Approved Amt (Rs)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredStudentRows.map((row) => (
-                            <tr key={row.id}>
-                              <td className="font-medium">{row.applicant}</td>
-                              <td>{row.academicYear}</td>
-                              <td>{row.department}</td>
-                              <td>{row.courseCategory}</td>
-                              <td>{formatRs(row.approvedAmount)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      {filteredStudentRows.length === 0 && (
-                        <div className="mt-3 text-sm text-[color:var(--ink-soft)]">No approved student applications found.</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {reportNotice && (
-                  <div className="mt-4 alert-info">{reportNotice}</div>
-                )}
-              </div>
-
-              <div
-                ref={allGraphsPdfRef}
-                aria-hidden="true"
-                className="pointer-events-none"
-                style={{
-                  position: "fixed",
-                  left: "-20000px",
-                  top: 0,
-                  width: "1240px",
-                  padding: "24px",
-                  background: "#ffffff",
-                  zIndex: -1,
-                  fontFamily: "\"Times New Roman\", Times, serif"
-                }}
-              >
-                <div className="space-y-4">
-                  {reportGraphExportItems.map((item) => (
-                    <section key={item.key} data-graph-export-card data-graph-title={item.title} className="w-full">
-                      {renderSelectedReportGraph(item.key)}
-                    </section>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {active === "Notice" && user?.role === "institution_coordinator" && (
-            <div className="mt-8">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-xl font-semibold font-display">Notice</h2>
-                <button className="btn btn-ghost" type="button" onClick={refresh}>Refresh</button>
-              </div>
-              <div className="mt-4 panel p-4">
-                <form onSubmit={submitNotice} className="space-y-4">
-                  <div>
-                    <label className="text-xs uppercase tracking-[0.2em] text-black/40">Notice Title</label>
-                    <input
-                      className="input mt-2"
-                      value={noticeTitle}
-                      onChange={(e) => setNoticeTitle(e.target.value)}
-                      placeholder="Enter notice title"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs uppercase tracking-[0.2em] text-black/40">Notice File</label>
-                    <input
-                      className="input mt-2"
-                      type="file"
-                      onChange={(e) => setNoticeFile(e.target.files?.[0] || null)}
-                      required
-                    />
-                    {noticeFile && <div className="muted mt-1 text-xs">{noticeFile.name}</div>}
-                  </div>
-                  <button className="btn btn-primary" type="submit">Submit Notice</button>
-                </form>
-                {noticeMessage && <div className="mt-3 text-sm text-emerald-700">{noticeMessage}</div>}
-              </div>
-
-              <div className="mt-4 grid gap-4">
-                {notices.map((notice) => (
-                  <div key={notice.id} className="panel p-4">
-                    <div className="font-semibold">{notice.title}</div>
-                    <div className="muted mt-1 text-xs">
-                      {new Date(notice.created_at).toLocaleString()}
-                    </div>
-                    <div className="mt-2 text-sm">
-                      {docLink(notice.file_path)}
-                    </div>
-                  </div>
-                ))}
-                {notices.length === 0 && (
-                  <div className="muted text-sm">No notices uploaded.</div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {active === "Authority Users" && user?.role === "institution_coordinator" && (
-            <div className="mt-8">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-xl font-semibold font-display">Authority Users</h2>
-                <div className="muted text-sm">
-                  {activeAuthorityUsersCount} active, {inactiveAuthorityUsersCount} inactive
-                </div>
-              </div>
-              <div className="mt-3">
-                <input
-                  className="input"
-                  placeholder="Search authority users by name, email, department, or role"
-                  value={authorityFilter}
-                  onChange={(e) => {
-                    setAuthorityFilter(e.target.value);
-                    setAuthorityUsersPage(1);
-                  }}
-                />
-              </div>
-              <div className="mt-4">
-                <div className="grid gap-3 sm:hidden">
-                  {authorityUsersPageData.rows.map((u) => (
-                    <div key={u.id} className="panel p-3">
-                      {(() => {
-                        const isActive = u?.is_active !== false;
-                        return (
-                          <>
-                            <div className="font-semibold">{u.name}</div>
-                            <div className="mt-1 text-xs text-black/60">{u.email}</div>
-                            <div className="mt-2 text-sm text-black/70">Department: {u.department}</div>
-                            <div className="text-sm text-black/70">Role: {AUTHORITY_ROLE_LABELS[u.role] || u.role}</div>
-                            <div className="text-sm text-black/70">
-                              Status:{" "}
-                              <span className={isActive ? "text-emerald-700 font-medium" : "text-rose-700 font-medium"}>
-                                {isActive ? "Active" : "Inactive"}
-                              </span>
+                      <div className="mt-4 grid gap-4 md:grid-cols-2">
+                        {[
+                          { label: "Pending", value: apps.length, color: "var(--accent-primary)" },
+                          { label: "Total", value: scopedAllApps.length, color: "var(--accent-secondary)" },
+                          { label: "My Approved", value: approvedByMeApps.length, color: "#10b981" },
+                          { label: "Rejected", value: rejectedAppsCount, color: "#f43f5e" }
+                        ].map((item) => (
+                          <div key={item.label} className="rounded-2xl p-4 border" style={{ background: "var(--surface-glass)", borderColor: "var(--border-subtle)" }}>
+                            <div className="flex items-center justify-between text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>
+                              <span>{item.label}</span>
+                              <span className="text-xl font-bold">{item.value}</span>
                             </div>
-                            <div className="mt-3">
-                              <button
-                                className={`btn btn-ghost w-full ${isActive ? "text-rose-600" : "text-emerald-700"}`}
-                                type="button"
-                                disabled={updatingAuthorityUserId === u.id}
-                                onClick={() => setAuthorityUserStatus(u, !isActive)}
+                            <div className="h-2 w-full rounded-full" style={{ background: "var(--border-subtle)" }}>
+                              <div className="h-2 rounded-full transition-all duration-700" style={{
+                                width: `${Math.min(100, Math.round((item.value / Math.max(scopedAllApps.length, 1)) * 100))}%`,
+                                background: item.color
+                              }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {active === "Application Form" && (
+                  <div className="mt-8 animate-slide-up">
+                    <div className="form-section">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h2 className="text-xl font-bold font-display" style={{ color: "var(--text-primary)" }}>
+                            Application Form
+                          </h2>
+                          <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>
+                            Submit your reimbursement application with the same review workflow used across the portal.
+                          </p>
+                        </div>
+                        <span className="badge">Live</span>
+                      </div>
+
+                      <form onSubmit={submitApplication} className="mt-6 space-y-5 pb-24 sm:mt-8 sm:space-y-6">
+                        <div className="form-section">
+                          <div className="form-section-header">
+                            <div className="form-section-title">Applicant Details</div>
+                            <div className="form-section-subtitle">Authority profile</div>
+                          </div>
+                          <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            <div>
+                              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Department</label>
+                              <input className="input mt-2 bg-black/5" value={form.department} readOnly required />
+                            </div>
+                            <div>
+                              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Applicant Name</label>
+                              <input className="input mt-2 bg-black/5 font-semibold" value={toUpperText(form.applicantName)} readOnly required />
+                            </div>
+                            <div>
+                              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Mobile Number</label>
+                              <input className="input mt-2" value={form.mobileNumber} onChange={(e) => setForm({ ...form, mobileNumber: e.target.value })} required />
+                            </div>
+                            <div>
+                              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Email ID</label>
+                              <input className="input mt-2 bg-black/5" type="email" value={form.email} readOnly required />
+                            </div>
+                            <div>
+                              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Designation</label>
+                              <input className="input mt-2" value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} required />
+                            </div>
+                            <div>
+                              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year</label>
+                              <input
+                                className="input mt-2"
+                                value={form.academicYear}
+                                onChange={(e) => setForm({ ...form, academicYear: e.target.value })}
+                                onBlur={(e) => setForm((prev) => ({ ...prev, academicYear: normalizeAcademicYear(e.target.value) }))}
+                                required
+                                placeholder="eg., 2023 - 2024"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year Type</label>
+                              <div className="mt-3 flex flex-wrap gap-4 text-sm text-black/70">
+                                {["ODD", "EVEN"].map((yearType) => (
+                                  <label key={yearType} className="flex items-center gap-2">
+                                    <input
+                                      type="radio"
+                                      name="authorityAcademicYearType"
+                                      value={yearType}
+                                      checked={form.academicYearType === yearType}
+                                      onChange={(e) => setForm({ ...form, academicYearType: e.target.value })}
+                                    />
+                                    {yearType}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Incentive Claims This Academic Year</label>
+                              <select
+                                className="input mt-2"
+                                value={form.incentiveClaimCount}
+                                onChange={(e) => setForm({ ...form, incentiveClaimCount: e.target.value })}
+                                required
                               >
-                                {updatingAuthorityUserId === u.id
-                                  ? "Updating..."
-                                  : (isActive ? "Deactivate" : "Activate")}
-                              </button>
+                                {INCENTIVE_CLAIM_OPTIONS.map((count) => (
+                                  <option key={count} value={count}>
+                                    {count}
+                                  </option>
+                                ))}
+                              </select>
                             </div>
-                          </>
-                        );
-                      })()}
+                            <div>
+                              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Category</label>
+                              <select
+                                className="input mt-2"
+                                value={form.courseCategory}
+                                onChange={(e) => setForm({ ...form, courseCategory: e.target.value })}
+                                required
+                              >
+                                <option value="" disabled>Select category</option>
+                                {COURSE_CATEGORY_OPTIONS.map((option) => (
+                                  <option key={option} value={option}>{option}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+
+                        {showCourseDetails && (
+                          <div ref={courseSectionsRef} className="space-y-5">
+                            <div className="form-section">
+                              <div className="form-section-header">
+                                <div className="form-section-title">Course Details</div>
+                                <div className="form-section-subtitle">Certification information</div>
+                              </div>
+                              <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                <div>
+                                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">Platform</label>
+                                  <input className="input mt-2" placeholder="Enter platform (e.g., NPTEL, Coursera)" value={form.coursePlatform} onChange={(e) => setForm({ ...form, coursePlatform: e.target.value })} required />
+                                </div>
+                                <div>
+                                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">Title of Course</label>
+                                  <input className="input mt-2" placeholder="Enter course title" value={form.courseTitle} onChange={(e) => setForm({ ...form, courseTitle: e.target.value })} required />
+                                </div>
+                                <div>
+                                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">NPTEL Roll Number</label>
+                                  <input
+                                    className="input mt-2 uppercase"
+                                    value={form.nptelApplicationNumber}
+                                    onChange={(e) => setForm({ ...form, nptelApplicationNumber: toUpperText(e.target.value) })}
+                                    required
+                                    placeholder="e.g., NPTEL-APP-12345"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">Session</label>
+                                  <input className="input mt-2" value={form.courseSession} onChange={(e) => setForm({ ...form, courseSession: e.target.value })} required />
+                                </div>
+                                <div>
+                                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">Number of Weeks</label>
+                                  <input className="input mt-2" type="number" min="1" value={form.courseWeeks} onChange={(e) => setForm({ ...form, courseWeeks: e.target.value })} required />
+                                </div>
+                                <div>
+                                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">Score</label>
+                                  <input className="input mt-2" value={form.courseScore} onChange={(e) => setForm({ ...form, courseScore: e.target.value })} required />
+                                </div>
+                                <div>
+                                  <label className="text-xs uppercase tracking-[0.2em] text-black/40">Credits</label>
+                                  <input className="input mt-2" type="number" min="0" value={form.courseCredits} onChange={(e) => setForm({ ...form, courseCredits: e.target.value })} required />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {showRegistrationDetails && (
+                          <div className="form-section">
+                            <div className="form-section-header">
+                              <div className="form-section-title">Registration Details</div>
+                              <div className="form-section-subtitle">Fee + claim</div>
+                            </div>
+                            <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+                              <div>
+                                <label className="text-xs uppercase tracking-[0.2em] text-black/40">Registration Fee Paid (Rs)</label>
+                                <input className="input mt-2" type="number" min="0" value={form.registrationFeePaid} onChange={(e) => setForm({ ...form, registrationFeePaid: e.target.value })} required />
+                              </div>
+                              <div>
+                                <label className="text-xs uppercase tracking-[0.2em] text-black/40">Permissible Claim (Rs)</label>
+                                <input className="input mt-2" type="number" min="0" value={form.permissibleClaim} onChange={(e) => setForm({ ...form, permissibleClaim: e.target.value })} required />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="form-section">
+                          <div className="form-section-header">
+                            <div className="form-section-title">Documents Attached</div>
+                            <div className="form-section-subtitle">Upload proofs</div>
+                          </div>
+                          <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            {showCourseDetails && (
+                              <div>
+                                <label className="text-xs uppercase tracking-[0.2em] text-black/40">Fee Payment Receipt (Max 150KB)</label>
+                                <input
+                                  className="input mt-2"
+                                  type="file"
+                                  accept=".pdf,application/pdf"
+                                  onChange={(e) => setForm({ ...form, feeReceiptFile: e.target.files?.[0] || null })}
+                                  required
+                                />
+                                {form.feeReceiptFile && <div className="muted mt-1 text-xs">{form.feeReceiptFile?.name}</div>}
+                              </div>
+                            )}
+                            <div>
+                              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Certificate From Certification Authority (Max 150KB)</label>
+                              <input
+                                className="input mt-2"
+                                type="file"
+                                accept=".pdf,application/pdf"
+                                onChange={(e) => setForm({ ...form, certificateFile: e.target.files?.[0] || null })}
+                                required
+                              />
+                              {form.certificateFile && <div className="muted mt-1 text-xs">{form.certificateFile?.name}</div>}
+                            </div>
+                            <div>
+                              <label className="text-xs uppercase tracking-[0.2em] text-black/40">Photograph (JPG, Max 150KB)</label>
+                              <input
+                                className="input mt-2"
+                                type="file"
+                                accept=".jpg,.jpeg,image/jpeg"
+                                onChange={(e) => setForm({ ...form, photographFile: e.target.files?.[0] || null })}
+                                required
+                              />
+                              {form.photographFile && <div className="muted mt-1 text-xs">{form.photographFile?.name}</div>}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="form-section">
+                          <div className="form-section-header">
+                            <div className="form-section-title">Declaration</div>
+                            <div className="form-section-subtitle">Required to submit</div>
+                          </div>
+                          <div className="mt-4 space-y-2 text-sm text-black/70">
+                            <div>1. Credits earned by me shall be assigned to the Institute.</div>
+                            <div>2. If excess payment made to me is noticed, I will pay back.</div>
+                            <div>3. The information furnished by me is correct.</div>
+                          </div>
+                          <label className="mt-4 flex items-center gap-2 text-sm text-black/70">
+                            <input
+                              type="checkbox"
+                              checked={form.declarationAccepted}
+                              onChange={(e) => setForm({ ...form, declarationAccepted: e.target.checked })}
+                              required
+                            />
+                            I agree to the declaration.
+                          </label>
+                        </div>
+
+                        <div className="mt-6 rounded-2xl border border-black/10 bg-white/90 p-3 backdrop-blur">
+                          <div className="flex flex-wrap gap-3">
+                            <button className="btn btn-primary w-full sm:w-auto" type="submit" disabled={isSubmittingApplication}>
+                              {isSubmittingApplication ? "Submitting..." : "Submit Application"}
+                            </button>
+                            <button
+                              className="btn btn-ghost w-full sm:w-auto"
+                              type="button"
+                              disabled={isSubmittingApplication}
+                              onClick={() => setForm({
+                                department: user?.department || "",
+                                applicantName: user?.name || "",
+                                mobileNumber: "",
+                                academicYear: "",
+                                academicYearType: "ODD",
+                                email: normalizeEmail(user?.email || ""),
+                                designation: "",
+                                incentiveClaimCount: DEFAULT_INCENTIVE_CLAIM_COUNT,
+                                coursePlatform: "",
+                                courseTitle: "",
+                                nptelApplicationNumber: "",
+                                courseSession: "",
+                                courseWeeks: "",
+                                courseScore: "",
+                                courseCategory: "",
+                                courseCredits: "",
+                                registrationFeePaid: "",
+                                permissibleClaim: "",
+                                feeReceiptFile: null,
+                                certificateFile: null,
+                                photographFile: null,
+                                declarationAccepted: false
+                              })}
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                      </form>
                     </div>
-                  ))}
-                </div>
-                <div className="hidden overflow-x-auto sm:block">
-                  <table className="w-full min-w-[920px] text-left text-sm">
-                    <thead>
-                      <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
-                        <th className="py-2 pr-4">Full Name</th>
-                        <th className="py-2 pr-4">Email</th>
-                        <th className="py-2 pr-4">Department</th>
-                        <th className="py-2 pr-4">Role</th>
-                        <th className="py-2 pr-4">Status</th>
-                        <th className="py-2 pr-4">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-black/10">
-                      {authorityUsersPageData.rows.map((u) => (
-                        <tr key={u.id}>
-                          {(() => {
-                            const isActive = u?.is_active !== false;
-                            return (
-                              <>
-                                <td className="py-3 pr-4 font-medium">{u.name}</td>
-                                <td className="py-3 pr-4">{u.email}</td>
-                                <td className="py-3 pr-4">{u.department}</td>
-                                <td className="py-3 pr-4">{AUTHORITY_ROLE_LABELS[u.role] || u.role}</td>
-                                <td className="py-3 pr-4">
-                                  <span className={isActive ? "text-emerald-700 font-medium" : "text-rose-700 font-medium"}>
-                                    {isActive ? "Active" : "Inactive"}
-                                  </span>
-                                </td>
-                                <td className="py-3 pr-4">
-                                  <button
-                                    className={`btn btn-ghost ${isActive ? "text-rose-600" : "text-emerald-700"}`}
-                                    type="button"
-                                    disabled={updatingAuthorityUserId === u.id}
-                                    onClick={() => setAuthorityUserStatus(u, !isActive)}
-                                  >
-                                    {updatingAuthorityUserId === u.id
-                                      ? "Updating..."
-                                      : (isActive ? "Deactivate" : "Activate")}
-                                  </button>
-                                </td>
-                              </>
-                            );
-                          })()}
-                        </tr>
+                  </div>
+                )}
+
+                {active === "Pending Applications" && (
+                  <div className="mt-6 animate-slide-up">
+                    <div className="form-section-header" style={{ marginBottom: "1.25rem" }}>
+                      <div>
+                        <h2 className="text-xl font-bold font-display" style={{ color: "var(--text-primary)" }}>Pending Applications</h2>
+                        <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{filteredPendingApps.length} application(s) awaiting review</p>
+                      </div>
+                      <button className="btn btn-ghost" type="button" onClick={refresh}>Refresh</button>
+                    </div>
+                    <div className="mt-4 w-full lg:max-w-xl">
+                      <label className="text-xs uppercase tracking-[0.2em] text-black/40">Search Pending Applications</label>
+                      <input
+                        className="input mt-2"
+                        type="search"
+                        placeholder="Search by name, ID, USN, department, course title"
+                        value={pendingSearch}
+                        onChange={(e) => {
+                          setPendingSearch(e.target.value);
+                          setPendingPage(1);
+                        }}
+                      />
+                    </div>
+                    {message && <div className="mt-3 rounded-xl px-4 py-2 text-sm font-medium" style={{ background: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.2)" }}>{message}</div>}
+                    <div className="mt-4 grid gap-5">
+                      {pendingPageData.rows.map((app) => (
+                        <div key={app.id} className="form-section animate-slide-up">
+                          <div className="flex items-center justify-between">
+                            <div className="font-bold text-base" style={{ color: "var(--text-primary)" }}>{app.data.applicant_name || app.data.application_name || `Application #${app.id}`}</div>
+                            <span className="badge">{app.status}</span>
+                          </div>
+                          <div className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                            {app.application_type ? `ID: ${app.id} | Type: ${app.application_type}` : `ID: ${app.id}`}
+                          </div>
+                          <div className="mt-4 grid gap-3 text-sm md:grid-cols-2" style={{ color: "var(--text-secondary)" }}>
+                            {[
+                              ["Applicant", app.data.applicant_name || app.data.application_name || ""],
+                              ["Department", app.data.department],
+                              ["USN", app.data.usn],
+                              ["Email", app.data.email],
+                              ["Mobile", app.data.mobile_number],
+                              ["Designation", app.data.designation],
+                              ["Semester", app.data.semester],
+                              ["Academic Year", formatAcademicYear(app.data.academic_year, "")],
+                              ["Academic Year Type", app.data.academic_year_type],
+                              ["Claims", app.data.incentive_claim_count],
+                              ["Course", app.data.course_title],
+                              ["NPTEL Roll Number", app.data.nptel_application_number],
+                              ["Platform", app.data.course_platform],
+                              ["Session", app.data.course_session],
+                              ["Weeks", app.data.course_weeks],
+                              ["Score", app.data.course_score],
+                              ["Category", app.data.course_category],
+                              ["Credits", app.data.course_credits],
+                              ["Fee Paid", app.data.registration_fee_paid],
+                              ["Permissible Claim", app.data.permissible_claim],
+                              ["Bank Acct", app.data.bank_account_number],
+                              ["Bank IFSC", app.data.bank_ifsc],
+                              ["Bank Branch", app.data.bank_branch],
+                              ["Bank Name", app.data.bank_name],
+                              ["Declaration", app.data.declaration_accepted ? "Yes" : "No"],
+                              ["Dept Coordinator Approved Amt", (() => { const a = getApprovedAmountByRole(app, "department_coordinator"); return a && a !== "-" ? `Rs. ${a}` : ""; })()]
+                            ]
+                              .filter(([, val]) => isDisplayValue(val))
+                              .map(([lbl, val]) => (
+                                <div key={lbl}><span style={{ color: "var(--text-muted)" }}>{lbl}:</span> {val}</div>
+                              ))}
+                            {[
+                              ["Fee Receipt", app.data.fee_receipt_file],
+                              ["Certificate", app.data.certificate_file],
+                              ["Bank Passbook", app.data.bank_passbook_file],
+                              ["Photograph", app.data.photograph_file],
+                              ["Signature", app.data.signature_file]
+                            ]
+                              .filter(([, path]) => isDisplayValue(path))
+                              .map(([lbl, path]) => (
+                                <div key={lbl}><span style={{ color: "var(--text-muted)" }}>{lbl}:</span> {docLink(path)}</div>
+                              ))}
+                          </div>
+                          <div className="mt-5 pt-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                            <label className="text-xs uppercase tracking-widest font-medium" style={{ color: "var(--text-muted)" }}>Rejection Remark (required)</label>
+                            <textarea className="input mt-2 h-24" value={rejectRemarks[app.id] || ""} onChange={(e) => setRejectRemarks((prev) => ({ ...prev, [app.id]: e.target.value }))} />
+                          </div>
+                          {(user?.role === "department_coordinator" || user?.role === "institution_coordinator") && (
+                            <div className="mt-4">
+                              <label className="text-xs uppercase tracking-widest font-medium" style={{ color: "var(--text-muted)" }}>
+                                {user?.role === "institution_coordinator"
+                                  ? "Approved Amount (Rs)"
+                                  : "Coordinator Approved Amount (Rs, optional)"}
+                              </label>
+                              <input
+                                className="input mt-2"
+                                type="text"
+                                inputMode="decimal"
+                                placeholder="0.00"
+                                value={approveAmounts[app.id] || ""}
+                                onChange={(e) => {
+                                  let val = e.target.value;
+                                  // allow empty, or digits with up to one decimal point
+                                  if (val !== "" && !/^\d*\.?\d*$/.test(val)) return;
+                                  setApproveAmounts((prev) => ({ ...prev, [app.id]: val }));
+                                }}
+                              />
+                            </div>
+                          )}
+                          <div className="mt-5 flex flex-wrap gap-3">
+                            <button className="btn btn-ghost" type="button" onClick={() => setSelectedApplication(app)}>
+                              View Form
+                            </button>
+                            <button className="btn btn-primary" type="button" onClick={() => review(app.id, "approve")}>Approve</button>
+                            <button className="btn btn-ghost" type="button" onClick={() => review(app.id, "reject")}>Reject</button>
+                          </div>
+                        </div>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-                {filteredAuthorityUsers.length === 0 && <div className="muted mt-3 text-sm">No authority users found.</div>}
-                {filteredAuthorityUsers.length > 0 && (
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    <div className="muted text-sm">Page {authorityUsersPageData.currentPage} of {authorityUsersPageData.totalPages}</div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="btn btn-ghost"
-                        type="button"
-                        disabled={authorityUsersPageData.currentPage <= 1}
-                        onClick={() => setAuthorityUsersPage((prev) => Math.max(1, prev - 1))}
-                      >
-                        Prev
-                      </button>
-                      <button
-                        className="btn btn-ghost"
-                        type="button"
-                        disabled={authorityUsersPageData.currentPage >= authorityUsersPageData.totalPages}
-                        onClick={() => setAuthorityUsersPage((prev) => Math.min(authorityUsersPageData.totalPages, prev + 1))}
-                      >
-                        Next
-                      </button>
+                      {filteredPendingApps.length === 0 && (
+                        <div className="form-section text-center py-8">
+                          <div className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>
+                            {pendingSearch.trim()
+                              ? "No pending applications match your search."
+                              : "No pending applications - you're all caught up!"}
+                          </div>
+                        </div>
+                      )}
                     </div>
+                    {filteredPendingApps.length > 0 && (
+                      <div className="mt-4 flex items-center justify-between gap-2">
+                        <div className="muted text-sm">
+                          Page {pendingPageData.currentPage} of {pendingPageData.totalPages}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="btn btn-ghost"
+                            type="button"
+                            disabled={pendingPageData.currentPage <= 1}
+                            onClick={() => setPendingPage((prev) => Math.max(1, prev - 1))}
+                          >
+                            Prev
+                          </button>
+                          <button
+                            className="btn btn-ghost"
+                            type="button"
+                            disabled={pendingPageData.currentPage >= pendingPageData.totalPages}
+                            onClick={() => setPendingPage((prev) => Math.min(pendingPageData.totalPages, prev + 1))}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
-                {authorityUsersMessage.text && (
-                  <div className={`mt-3 text-sm ${authorityUsersMessage.type === "error" ? "text-rose-600" : "text-emerald-600"}`}>
-                    {authorityUsersMessage.text}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
-          {active === "Form Filling Window" && user?.role === "institution_coordinator" && (
-            <div className="mt-8">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold font-display">Form Filling Window</h2>
-                <div className="muted text-sm">Institution Coordinator Control</div>
-              </div>
-              <form onSubmit={submitFormWindow} className="mt-4 grid gap-3 md:grid-cols-3">
-                <input
-                  className="input"
-                  type="date"
-                  value={formWindowForm.start_date}
-                  onChange={(e) => setFormWindowForm((prev) => ({ ...prev, start_date: e.target.value }))}
-                  required
-                />
-                <input
-                  className="input"
-                  type="date"
-                  value={formWindowForm.end_date}
-                  onChange={(e) => setFormWindowForm((prev) => ({ ...prev, end_date: e.target.value }))}
-                  required
-                />
-                <div className="md:col-span-3 flex justify-end">
-                  <button className="btn btn-primary w-full md:w-auto" type="submit">Save Window</button>
-                </div>
-              </form>
-              <div className="muted mt-3 text-sm">
-                Applications can be submitted only between selected start and end dates.
-              </div>
-              {formWindowMessage && <div className="mt-2 text-sm text-black/70">{formWindowMessage}</div>}
-            </div>
-          )}
+                {active === "Approved Students" && user?.role === "institution_coordinator" && (
+                  <div className="mt-8 animate-fade-in">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                      <h2 className="text-xl font-semibold font-display">Approved Students</h2>
+                    </div>
+                    <div className="grid min-h-0 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+                      <aside className="panel space-y-4 p-4">
+                        <div className="text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">Approved Student Search</div>
+                        <div>
+                          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
+                            Search by Name
+                          </label>
+                          <input
+                            className="input"
+                            placeholder="Student name"
+                            value={reportStudentSearch}
+                            onChange={(e) => setReportStudentSearch(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
+                            Academic Year
+                          </label>
+                          <select
+                            className="input"
+                            value={reportStudentYearFilter}
+                            onChange={(e) => setReportStudentYearFilter(e.target.value)}
+                          >
+                            <option value="all">All Academic Years</option>
+                            {studentYearOptions.map((year) => (
+                              <option key={year} value={year}>{year}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
+                            Category
+                          </label>
+                          <select
+                            className="input"
+                            value={reportStudentCategoryFilter}
+                            onChange={(e) => setReportStudentCategoryFilter(e.target.value)}
+                          >
+                            <option value="all">All Categories</option>
+                            {studentCategoryOptions.map((category) => (
+                              <option key={category} value={category}>{category}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--paper-strong)] px-3 py-2">
+                            <span className="text-[color:var(--ink-soft)]">Total Approved:</span> {studentReportRows.length}
+                          </div>
+                          <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--paper-strong)] px-3 py-2">
+                            <span className="text-[color:var(--ink-soft)]">Filtered:</span> {filteredStudentRows.length}
+                          </div>
+                          <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--paper-strong)] px-3 py-2">
+                            <span className="text-[color:var(--ink-soft)]">Approved Total (Rs):</span> {formatRs(filteredStudentApprovedAmount)}
+                          </div>
+                        </div>
+                        <button className="btn btn-ghost w-full" type="button" onClick={exportStudentSectionExcel}>
+                          Export Excel
+                        </button>
+                      </aside>
 
-          {active === "Feedback" && (
-            <div className="mt-8">
-              <h2 className="text-xl font-semibold font-display">Feedback</h2>
-              <p className="muted mt-2 text-sm">Share your experience so we can improve the review workflow.</p>
-              <div className="mt-4 panel p-4">
-                {feedbackList.length > 0 && (
-                  <div className="mb-3 rounded-xl border border-emerald-300/60 bg-emerald-50/80 px-3 py-2 text-sm text-emerald-800">
-                    You already submitted feedback. Only one submission is allowed.
-                  </div>
-                )}
-                <form onSubmit={submitFeedback} className="space-y-4">
-                  <div>
-                    <label className="text-xs uppercase tracking-[0.2em] text-black/40">
-                      Is this website beneficial?
-                    </label>
-                    <select
-                      className="input mt-2"
-                      value={feedbackForm.benefit_status}
-                      onChange={(e) => setFeedbackForm((prev) => ({ ...prev, benefit_status: e.target.value }))}
-                    >
-                      <option value="beneficial">Yes, beneficial</option>
-                      <option value="partially_beneficial">Partially beneficial</option>
-                      <option value="not_beneficial">Not beneficial</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs uppercase tracking-[0.2em] text-black/40">Rating</label>
-                    <select
-                      className="input mt-2"
-                      value={feedbackForm.rating}
-                      onChange={(e) => setFeedbackForm((prev) => ({ ...prev, rating: e.target.value }))}
-                    >
-                      <option value="5">5 - Excellent</option>
-                      <option value="4">4 - Good</option>
-                      <option value="3">3 - Average</option>
-                      <option value="2">2 - Poor</option>
-                      <option value="1">1 - Very Poor</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs uppercase tracking-[0.2em] text-black/40">Message</label>
-                    <textarea
-                      className="input mt-2 h-28"
-                      value={feedbackForm.message}
-                      onChange={(e) => setFeedbackForm((prev) => ({ ...prev, message: e.target.value }))}
-                      placeholder="Write your feedback..."
-                      required
-                    />
-                  </div>
-                  <button className="btn btn-primary" type="submit" disabled={feedbackList.length > 0}>
-                    {feedbackList.length > 0 ? "Submitted" : "Submit Feedback"}
-                  </button>
-                </form>
-                {feedbackMessage && (
-                  <div className={`mt-3 text-sm ${feedbackType === "error" ? "text-rose-600" : "text-emerald-600"}`}>
-                    {feedbackMessage}
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {feedbackList.map((item) => (
-                  <div key={item.id} className="panel p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-xs uppercase tracking-[0.2em] text-black/50">
-                        Website Benefit: {String(item.benefit_status || "beneficial").replace(/_/g, " ")}
+                      <div className="panel p-4">
+                        <h3 className="text-sm font-semibold text-[color:var(--ink)]">Approved Students List</h3>
+                        <div className="mt-3 overflow-x-auto">
+                          <table className="data-table min-w-[720px]">
+                            <thead>
+                              <tr>
+                                <th>Name</th>
+                                <th>Academic Year</th>
+                                <th>Department</th>
+                                <th>Category</th>
+                                <th>Approved Amt (Rs)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredStudentRows.map((row) => (
+                                <tr key={row.id}>
+                                  <td className="font-medium">{row.applicant}</td>
+                                  <td>{row.academicYear}</td>
+                                  <td>{row.department}</td>
+                                  <td>{row.courseCategory}</td>
+                                  <td>{formatRs(row.approvedAmount)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {filteredStudentRows.length === 0 && (
+                            <div className="mt-3 text-sm text-[color:var(--ink-soft)]">No approved student applications found.</div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-sm font-semibold">Rating: {item.rating ?? "-"}/5</div>
-                      <div className="muted text-xs">{new Date(item.created_at).toLocaleString()}</div>
-                    </div>
-                    <div className="mt-2 text-sm text-black/80">{item.message}</div>
                   </div>
-                ))}
-                {feedbackList.length === 0 && (
-                  <div className="muted text-sm">No feedback submitted yet.</div>
                 )}
-              </div>
-            </div>
-          )}
 
-          {active === "Profile" && (
-            <div className="mt-8">
-              <h2 className="text-xl font-semibold font-display">Profile</h2>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <div className="  panel p-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-black/40">Name</div>
-                  <div className="mt-2 text-lg font-semibold">{user?.name}</div>
-                </div>
-                <div className="panel p-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-black/40">Email</div>
-                  <div className="mt-2 text-sm">{user?.email}</div>
-                </div>
-                <div className="panel p-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-black/40">Role</div>
-                  <div className="mt-2 text-sm">{ROLE_LABELS[user?.role] || user?.role}</div>
-                </div>
-                <div className="panel p-4">
-                  <div className="text-xs uppercase tracking-[0.2em] text-black/40">Department</div>
-                  {editingDepartment ? (
-                    <div className="mt-2 space-y-2">
-                      <select
-                        className="input"
-                        value={departmentDraft}
-                        onChange={(e) => setDepartmentDraft(e.target.value)}
-                      >
-                        <option value="" disabled>Select department</option>
-                        <option value="First Year">First Year</option>
-                        <option value="CSE">CSE</option>
-                        <option value="AIML">AIML</option>
-                        <option value="AIDS">AIDS</option>
-                        <option value="ETC">ETC</option>
-                        <option value="IT">IT</option>
-                        <option value="EE">EE</option>
-                        <option value="ME">ME</option>
-                        <option value="CA (Computer Applications)">CA (Computer Applications)</option>
-                        <option value="BA (Business Administration)">BA (Business Administration)</option>
-                      </select>
-                      <div className="flex flex-wrap gap-2">
-                        <button className="btn btn-primary" type="button" onClick={saveDepartment}>Save</button>
-                        <button
-                          className="btn btn-ghost"
-                          type="button"
-                          onClick={() => {
-                            setDepartmentDraft(user?.department || "");
-                            setEditingDepartment(false);
-                          }}
-                        >
-                          Cancel
+                {active === "My Applications" && (
+                  <div className="mt-8">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h2 className="text-xl font-semibold font-display">My Applications</h2>
+                      <div className="flex items-center gap-2 text-sm text-[color:var(--ink-soft)]">
+                        <span>{filteredMySubmittedApps.length} total</span>
+                        <button className="btn btn-ghost" type="button" onClick={loadMyApplications}>
+                          Refresh
                         </button>
                       </div>
                     </div>
-                  ) : (
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <div className="text-sm">{user?.department}</div>
-                      <button className="btn btn-ghost" type="button" onClick={() => setEditingDepartment(true)}>
-                        Edit
-                      </button>
+
+                    {applicationsNotice && (
+                      <div className={`mt-3 text-sm ${applicationsNoticeType === "error" ? "text-rose-600" : "text-emerald-600"}`}>
+                        {applicationsNotice}
+                      </div>
+                    )}
+
+                    <div className="mt-4 w-full lg:max-w-xl">
+                      <label className="text-xs uppercase tracking-[0.2em] text-black/40">Search My Applications</label>
+                      <input
+                        className="input mt-2"
+                        type="search"
+                        placeholder="Search by name, ID, department, status, or course title"
+                        value={myApplicationsSearch}
+                        onChange={(e) => {
+                          setMyApplicationsSearch(e.target.value);
+                          setMyApplicationsPage(1);
+                        }}
+                      />
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
 
-          {active === "Delete Account" && (
-            <div className="mt-8">
-              <h2 className="text-xl font-semibold font-display text-rose-700">Delete Account</h2>
-              <p className="mt-2 text-sm text-black/70">
-                This deactivates your account access. Your records are retained in the database.
-              </p>
-              <div className="mt-4 panel border-rose-300/70 bg-rose-50 p-4">
-                <button
-                  className="btn btn-primary bg-rose-600 hover:bg-rose-700 disabled:opacity-60"
-                  type="button"
-                  onClick={openDeleteAccountPopup}
-                  disabled={deletingAccount}
-                >
-                  {deletingAccount ? "Deleting..." : "Delete My Account"}
-                </button>
-                {deleteMessage && <div className="mt-3 text-sm text-rose-700">{deleteMessage}</div>}
-              </div>
-            </div>
-          )}
+                    <div className="mt-4 grid gap-4">
+                      {myApplicationsPageData.rows.map((app) => (
+                        <div key={app.id} className="panel p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="font-semibold">{app.data.applicant_name || app.data.application_name || `Application #${app.id}`}</div>
+                              <div className="muted mt-1 text-xs">ID: {app.id}</div>
+                            </div>
+                            <span className="badge">{statusLabel(app.status)}</span>
+                          </div>
 
-          {active === "Logout" && (
-            <div className="mt-8">
-              <h2 className="text-xl font-semibold font-display">Logout</h2>
-              <p className="muted mt-2 text-sm">You can sign back in anytime.</p>
-              <button className="btn btn-ghost mt-4" onClick={() => logout(setUser)}>Logout</button>
-            </div>
-          )}
-            </>
-          )}
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                            {flowSteps.map((step, index) => {
+                              const currentIndex = flowSteps.findIndex((s) => s.key === app.status);
+                              const reached = app.status === "approved" || currentIndex >= index;
+                              const isRejected = app.status === "rejected";
+                              return (
+                                <span
+                                  key={step.key}
+                                  className={`flow-step ${isRejected
+                                    ? "flow-step-rejected"
+                                    : reached
+                                      ? "flow-step-done"
+                                      : "flow-step-pending"
+                                    }`}
+                                >
+                                  {step.label}
+                                </span>
+                              );
+                            })}
+                          </div>
+
+                          <div className="mt-4 grid gap-3 text-sm text-black/70 md:grid-cols-2">
+                            {[
+                              ["Department", app.data.department],
+                              ["Designation", app.data.designation],
+                              ["Email", app.data.email],
+                              ["Mobile", app.data.mobile_number],
+                              ["Academic Year", formatAcademicYear(app.data.academic_year, "")],
+                              ["Academic Year Type", app.data.academic_year_type],
+                              ["Course", app.data.course_title],
+                              ["Category", app.data.course_category],
+                              ["NPTEL Application No", app.data.nptel_application_number],
+                              ["Platform", app.data.course_platform],
+                              ["Score", app.data.course_score],
+                              ["Credits", app.data.course_credits],
+                              ["Fee Paid", app.data.registration_fee_paid],
+                              ["Permissible Claim", app.data.permissible_claim],
+                              ["Submitted At", app.created_at ? new Date(app.created_at).toLocaleString() : ""]
+                            ]
+                              .filter(([, value]) => hasDisplayText(value))
+                              .map(([label, value]) => (
+                                <div key={label}>
+                                  <span className="text-black/50">{label}:</span> {value}
+                                </div>
+                              ))}
+                          </div>
+
+                          <div className="mt-4 flex flex-wrap justify-end gap-2">
+                            <button className="btn btn-primary" type="button" onClick={() => setSelectedApplication(app)}>
+                              Application Details
+                            </button>
+                            <button className="btn btn-ghost" type="button" onClick={() => printApplicationForm(app)}>
+                              Print Form PDF
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                      {filteredMySubmittedApps.length === 0 && (
+                        <div className="muted text-sm">
+                          {myApplicationsSearch.trim()
+                            ? "No submitted applications match your search."
+                            : "No applications submitted yet."}
+                        </div>
+                      )}
+                    </div>
+
+                    {filteredMySubmittedApps.length > 0 && (
+                      <div className="mt-4 flex items-center justify-between gap-2">
+                        <div className="muted text-sm">
+                          Page {myApplicationsPageData.currentPage} of {myApplicationsPageData.totalPages}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="btn btn-ghost"
+                            type="button"
+                            disabled={myApplicationsPageData.currentPage <= 1}
+                            onClick={() => setMyApplicationsPage((prev) => Math.max(1, prev - 1))}
+                          >
+                            Prev
+                          </button>
+                          <button
+                            className="btn btn-ghost"
+                            type="button"
+                            disabled={myApplicationsPageData.currentPage >= myApplicationsPageData.totalPages}
+                            onClick={() => setMyApplicationsPage((prev) => Math.min(myApplicationsPageData.totalPages, prev + 1))}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {active === "My Approved Applications" && (
+                  <div className="mt-8">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h2 className="text-xl font-semibold font-display">My Approved Applications</h2>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button className="btn btn-ghost" type="button" onClick={refreshApprovedOnly}>Refresh</button>
+                        {user?.role === "institution_coordinator" && (
+                          <>
+                            <button className="btn btn-ghost" type="button" onClick={exportApprovedApplicationsExcel}>
+                              Export Excel
+                            </button>
+                            <button className="btn btn-ghost" type="button" onClick={exportApprovedApplicationsPdf}>
+                              Export PDF
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-4 w-full lg:max-w-xl">
+                      <label className="text-xs uppercase tracking-[0.2em] text-black/40">Search Approved Applications</label>
+                      <input
+                        className="input mt-2"
+                        type="search"
+                        placeholder="Search by name, ID, department, course title"
+                        value={approvedSearch}
+                        onChange={(e) => {
+                          setApprovedSearch(e.target.value);
+                          setApprovedPage(1);
+                        }}
+                      />
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:max-w-5xl lg:grid-cols-3">
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year</label>
+                        <select
+                          className="input mt-2"
+                          value={reportApprovedYearFilter}
+                          onChange={(e) => {
+                            setReportApprovedYearFilter(e.target.value);
+                            setApprovedPage(1);
+                          }}
+                        >
+                          <option value="all">All Academic Years</option>
+                          {approvedByMeYearOptions.map((year) => (
+                            <option key={year} value={year}>{year}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Academic Year Type</label>
+                        <select
+                          className="input mt-2"
+                          value={reportApprovedYearTypeFilter}
+                          onChange={(e) => {
+                            setReportApprovedYearTypeFilter(e.target.value);
+                            setApprovedPage(1);
+                          }}
+                        >
+                          <option value="all">All Types</option>
+                          {approvedByMeYearTypeOptions.map((type) => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Department</label>
+                        <select
+                          className="input mt-2"
+                          value={reportApprovedDepartmentFilter}
+                          onChange={(e) => {
+                            setReportApprovedDepartmentFilter(e.target.value);
+                            setApprovedPage(1);
+                          }}
+                        >
+                          <option value="all">All Departments</option>
+                          {approvedByMeDepartmentOptions.map((department) => (
+                            <option key={department} value={department}>{department}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-4">
+                      {approvedPageData.rows.map((app) => (
+                        <div key={app.id} className="panel p-4">
+                          <div className="flex items-center justify-between">
+                            <div className="font-semibold">{app.data.applicant_name || app.data.application_name || `Application #${app.id}`}</div>
+                            <span className="badge">{app.status}</span>
+                          </div>
+                          <div className="muted mt-2 text-xs">ID: {app.id}</div>
+                          <div className="mt-3 grid gap-2 text-sm text-black/70">
+                            {[
+                              { label: "Department", value: app.data.department || "" },
+                              { label: "Academic Year", value: formatAcademicYear(app.data?.academic_year, "") },
+                              { label: "Academic Year Type", value: toAcademicYearType(app.data?.academic_year_type) },
+                              { label: "Category", value: app.data.course_category || "" },
+                              { label: "Submitted At", value: app.created_at ? new Date(app.created_at).toLocaleString() : "" },
+                              { label: "Approved Amount", value: getInstitutionCoordinatorApprovedAmount(app) }
+                            ]
+                              .filter((item) => hasDisplayText(item.value))
+                              .map((item) => (
+                                <div key={item.label}>
+                                  <span className="text-black/50">{item.label}:</span> {item.value}
+                                </div>
+                              ))}
+                          </div>
+                          <div className="mt-4 flex justify-end">
+                            <button
+                              className="btn btn-primary"
+                              type="button"
+                              onClick={() => setSelectedApplication(app)}
+                            >
+                              View Form
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {filteredApprovedByMeApps.length === 0 && (
+                        <div className="muted text-sm">
+                          {approvedSearch.trim()
+                            ? "No approved applications match your search and filters."
+                            : "No applications found for the selected filters."}
+                        </div>
+                      )}
+                    </div>
+                    {filteredApprovedByMeApps.length > 0 && (
+                      <div className="mt-4 flex items-center justify-between gap-2">
+                        <div className="muted text-sm">
+                          Page {approvedPageData.currentPage} of {approvedPageData.totalPages}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="btn btn-ghost"
+                            type="button"
+                            disabled={approvedPageData.currentPage <= 1}
+                            onClick={() => setApprovedPage((prev) => Math.max(1, prev - 1))}
+                          >
+                            Prev
+                          </button>
+                          <button
+                            className="btn btn-ghost"
+                            type="button"
+                            disabled={approvedPageData.currentPage >= approvedPageData.totalPages}
+                            onClick={() => setApprovedPage((prev) => Math.min(approvedPageData.totalPages, prev + 1))}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {active === "Total Applications" && (
+                  <div className="mt-8">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h2 className="text-xl font-semibold font-display">Total Applications</h2>
+                      <div className="w-full sm:w-72">
+                        <label className="text-xs uppercase tracking-[0.2em] text-black/40">Status Filter</label>
+                        <select
+                          className="input mt-2"
+                          value={totalStatusFilter}
+                          onChange={(e) => {
+                            setTotalStatusFilter(e.target.value);
+                            setTotalPage(1);
+                          }}
+                        >
+                          <option value="all">All Applications</option>
+                          <option value="approved">Approved Applications</option>
+                          <option value="rejected">Rejected Applications</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="mt-4 w-full lg:max-w-xl">
+                      <label className="text-xs uppercase tracking-[0.2em] text-black/40">Search Total Applications</label>
+                      <input
+                        className="input mt-2"
+                        type="search"
+                        placeholder="Search by name, ID, department, status, course title"
+                        value={totalSearch}
+                        onChange={(e) => {
+                          setTotalSearch(e.target.value);
+                          setTotalPage(1);
+                        }}
+                      />
+                    </div>
+                    <div className="mt-4 grid gap-4">
+                      {totalPageData.rows.map((app) => (
+                        <div key={app.id} className="panel p-4">
+                          <div className="flex items-center justify-between">
+                            <div className="font-semibold">{app.data.applicant_name || app.data.application_name || "-"}</div>
+                            <span className="badge">{app.status}</span>
+                          </div>
+                          <div className="muted mt-2 text-xs">ID: {app.id}</div>
+                          <div className="mt-3 text-sm text-black/70">
+                            <span className="text-black/50">Department:</span> {app.data.department || "-"}
+                          </div>
+                          <div className="mt-2 text-sm text-black/70">
+                            <span className="text-black/50">Submitted At:</span> {app.created_at ? new Date(app.created_at).toLocaleString() : "-"}
+                          </div>
+                          <div className="mt-4 flex justify-end">
+                            <button
+                              className="btn btn-primary"
+                              type="button"
+                              onClick={() => setSelectedApplication(app)}
+                            >
+                              View Form
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {filteredTotalApps.length === 0 && (
+                        <div className="muted text-sm">
+                          {totalSearch.trim()
+                            ? "No applications match your search and filter."
+                            : "No applications."}
+                        </div>
+                      )}
+                    </div>
+                    {filteredTotalApps.length > 0 && (
+                      <div className="mt-4 flex items-center justify-between gap-2">
+                        <div className="muted text-sm">
+                          Page {totalPageData.currentPage} of {totalPageData.totalPages}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="btn btn-ghost"
+                            type="button"
+                            disabled={totalPageData.currentPage <= 1}
+                            onClick={() => setTotalPage((prev) => Math.max(1, prev - 1))}
+                          >
+                            Prev
+                          </button>
+                          <button
+                            className="btn btn-ghost"
+                            type="button"
+                            disabled={totalPageData.currentPage >= totalPageData.totalPages}
+                            onClick={() => setTotalPage((prev) => Math.min(totalPageData.totalPages, prev + 1))}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {active === "Reports" && user?.role === "institution_coordinator" && (
+                  <div className="mt-8">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h2 className="text-xl font-semibold font-display">Real-Time Reports Dashboard</h2>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button className="btn btn-ghost" type="button" onClick={refresh}>Refresh</button>
+                        <button className="btn btn-ghost" type="button" onClick={exportReportPdf}>Export PDF</button>
+                        <button className="btn btn-ghost" type="button" onClick={exportGraphPdf}>Graph PDF (A4)</button>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 panel p-4">
+                      <div className="text-xs text-[color:var(--ink-soft)]">
+                        All graphs and reports on one page. Auto-refresh updates every 5 seconds.
+                      </div>
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="stat-card p-3 text-sm">
+                          <div className="stat-card-label">Total Applications</div>
+                          <div className="stat-card-value text-xl">{reportTotalCount}</div>
+                        </div>
+                        <div className="stat-card p-3 text-sm">
+                          <div className="stat-card-label">Pending</div>
+                          <div className="stat-card-value text-xl">{reportPendingCount}</div>
+                        </div>
+                        <div className="stat-card p-3 text-sm">
+                          <div className="stat-card-label">Approved</div>
+                          <div className="stat-card-value text-xl">{reportApprovedApps.length}</div>
+                        </div>
+                        <div className="stat-card p-3 text-sm">
+                          <div className="stat-card-label">Approved Total (Rs)</div>
+                          <div className="stat-card-value text-xl">{formatRs(reportApprovedTotalAmount)}</div>
+                        </div>
+                      </div>
+
+                      <div ref={graphContainerRef} className="mt-6 space-y-6">
+                        <div className="flex flex-wrap items-end gap-3">
+                          <div>
+                            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
+                              Academic Year Filter
+                            </label>
+                            <select className="input" value={reportYearFilter} onChange={(e) => setReportYearFilter(e.target.value)}>
+                              <option value="all">All Academic Years</option>
+                              {yearWiseDropdownOptions.map((item) => (
+                                <option key={item.year} value={item.year}>{item.year}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+                          {renderPieCard("Application Status Pie Graph", reportBreakdown, statusPieSegments, reportTotalCount)}
+                          {renderPieCard(
+                            "Academic Year and Academic Year Type Wise Pie Graph",
+                            academicYearData,
+                            academicYearSegments,
+                            academicYearTotal
+                          )}
+                          {renderPieCard(
+                            "Department Wise Applications Pie Graph",
+                            departmentWiseData,
+                            departmentWiseSegments,
+                            departmentWiseTotal,
+                            "No department applications."
+                          )}
+                          {renderPieCard(
+                            "Faculty vs Student Applications Pie Graph",
+                            applicationTypeData,
+                            applicationTypeSegments,
+                            applicationTypeTotal,
+                            "No application type data."
+                          )}
+                          {renderPieCard("Category Wise Pie Graph", categoryWiseData, categoryWiseSegments, categoryWiseTotal)}
+                          {renderPieCard("Feedback Rating Pie Graph", feedbackData, feedbackSegments, feedbackTotal, "No feedback submissions yet.")}
+                          {renderPieCard(`Last Year (${lastYear}) Pie Graph`, lastYearStatusData, lastYearSegments, lastYearTotal, `No applications in ${lastYear}`)}
+                          {renderPieCard(`${selectedYearLabel} Status Pie Graph`, selectedYearStatusData, selectedYearStatusSegments, selectedYearStatusTotal)}
+                        </div>
+
+                        {renderMonthlyTrendCard()}
+                        {renderYearWiseLineCard()}
+
+                        <div className="overflow-x-auto">
+                          <h3 className="mb-3 text-sm font-semibold text-[color:var(--ink)]">Year Wise Application Summary</h3>
+                          <table className="data-table min-w-[860px]">
+                            <thead>
+                              <tr>
+                                <th>Academic Year</th>
+                                <th>Total</th>
+                                <th>Pending</th>
+                                <th>Approved</th>
+                                <th>Rejected</th>
+                                <th>Approved Rs</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {yearWiseSummary.map((row) => (
+                                <tr key={row.year}>
+                                  <td className="font-medium">{row.year}</td>
+                                  <td>{row.total}</td>
+                                  <td>{row.pending}</td>
+                                  <td>{row.approved}</td>
+                                  <td>{row.rejected}</td>
+                                  <td>{formatRs(row.approvedAmount)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {yearWiseSummary.length === 0 && (
+                            <div className="mt-3 text-sm text-[color:var(--ink-soft)]">No academic year records available.</div>
+                          )}
+                        </div>
+                      </div>
+
+
+                      {reportNotice && (
+                        <div className="mt-4 alert-info">{reportNotice}</div>
+                      )}
+                    </div>
+
+                    <div
+                      ref={allGraphsPdfRef}
+                      aria-hidden="true"
+                      className="pointer-events-none"
+                      style={{
+                        position: "fixed",
+                        left: "-20000px",
+                        top: 0,
+                        width: "1240px",
+                        padding: "24px",
+                        background: "#ffffff",
+                        zIndex: -1,
+                        fontFamily: "\"Times New Roman\", Times, serif"
+                      }}
+                    >
+                      <div className="space-y-4">
+                        {reportGraphExportItems.map((item) => (
+                          <section key={item.key} data-graph-export-card data-graph-title={item.title} className="w-full">
+                            {renderSelectedReportGraph(item.key)}
+                          </section>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {active === "Notice" && user?.role === "institution_coordinator" && (
+                  <div className="mt-8">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h2 className="text-xl font-semibold font-display">Notice</h2>
+                      <button className="btn btn-ghost" type="button" onClick={refresh}>Refresh</button>
+                    </div>
+                    <div className="mt-4 panel p-4">
+                      <form onSubmit={submitNotice} className="space-y-4">
+                        <div>
+                          <label className="text-xs uppercase tracking-[0.2em] text-black/40">Notice Title</label>
+                          <input
+                            className="input mt-2"
+                            value={noticeTitle}
+                            onChange={(e) => setNoticeTitle(e.target.value)}
+                            placeholder="Enter notice title"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs uppercase tracking-[0.2em] text-black/40">Notice File</label>
+                          <input
+                            className="input mt-2"
+                            type="file"
+                            onChange={(e) => setNoticeFile(e.target.files?.[0] || null)}
+                            required
+                          />
+                          {noticeFile && <div className="muted mt-1 text-xs">{noticeFile.name}</div>}
+                        </div>
+                        <button className="btn btn-primary" type="submit">Submit Notice</button>
+                      </form>
+                      {noticeMessage && <div className="mt-3 text-sm text-emerald-700">{noticeMessage}</div>}
+                    </div>
+
+                    <div className="mt-4 grid gap-4">
+                      {notices.map((notice) => (
+                        <div key={notice.id} className="panel p-4">
+                          <div className="font-semibold">{notice.title}</div>
+                          <div className="muted mt-1 text-xs">
+                            {new Date(notice.created_at).toLocaleString()}
+                          </div>
+                          <div className="mt-2 text-sm">
+                            {docLink(notice.file_path)}
+                          </div>
+                        </div>
+                      ))}
+                      {notices.length === 0 && (
+                        <div className="muted text-sm">No notices uploaded.</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {active === "Authority Users" && user?.role === "institution_coordinator" && (
+                  <div className="mt-8">
+                    <div className="flex items-center justify-between gap-2">
+                      <h2 className="text-xl font-semibold font-display">Authority Users</h2>
+                      <div className="muted text-sm">
+                        {activeAuthorityUsersCount} active, {inactiveAuthorityUsersCount} inactive
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <input
+                        className="input"
+                        placeholder="Search authority users by name, email, department, or role"
+                        value={authorityFilter}
+                        onChange={(e) => {
+                          setAuthorityFilter(e.target.value);
+                          setAuthorityUsersPage(1);
+                        }}
+                      />
+                    </div>
+                    <div className="mt-4">
+                      <div className="grid gap-3 sm:hidden">
+                        {authorityUsersPageData.rows.map((u) => (
+                          <div key={u.id} className="panel p-3">
+                            {(() => {
+                              const isActive = u?.is_active !== false;
+                              return (
+                                <>
+                                  <div className="font-semibold">{u.name}</div>
+                                  <div className="mt-1 text-xs text-black/60">{u.email}</div>
+                                  <div className="mt-2 text-sm text-black/70">Department: {u.department}</div>
+                                  <div className="text-sm text-black/70">Role: {AUTHORITY_ROLE_LABELS[u.role] || u.role}</div>
+                                  <div className="text-sm text-black/70">
+                                    Status:{" "}
+                                    <span className={isActive ? "text-emerald-700 font-medium" : "text-rose-700 font-medium"}>
+                                      {isActive ? "Active" : "Inactive"}
+                                    </span>
+                                  </div>
+                                  <div className="mt-3">
+                                    <button
+                                      className={`btn btn-ghost w-full ${isActive ? "text-rose-600" : "text-emerald-700"}`}
+                                      type="button"
+                                      disabled={updatingAuthorityUserId === u.id}
+                                      onClick={() => setAuthorityUserStatus(u, !isActive)}
+                                    >
+                                      {updatingAuthorityUserId === u.id
+                                        ? "Updating..."
+                                        : (isActive ? "Deactivate" : "Activate")}
+                                    </button>
+                                  </div>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="hidden overflow-x-auto sm:block">
+                        <table className="w-full min-w-[920px] text-left text-sm">
+                          <thead>
+                            <tr className="text-xs uppercase tracking-[0.2em] text-black/40">
+                              <th className="py-2 pr-4">Full Name</th>
+                              <th className="py-2 pr-4">Email</th>
+                              <th className="py-2 pr-4">Department</th>
+                              <th className="py-2 pr-4">Role</th>
+                              <th className="py-2 pr-4">Status</th>
+                              <th className="py-2 pr-4">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-black/10">
+                            {authorityUsersPageData.rows.map((u) => (
+                              <tr key={u.id}>
+                                {(() => {
+                                  const isActive = u?.is_active !== false;
+                                  return (
+                                    <>
+                                      <td className="py-3 pr-4 font-medium">{u.name}</td>
+                                      <td className="py-3 pr-4">{u.email}</td>
+                                      <td className="py-3 pr-4">{u.department}</td>
+                                      <td className="py-3 pr-4">{AUTHORITY_ROLE_LABELS[u.role] || u.role}</td>
+                                      <td className="py-3 pr-4">
+                                        <span className={isActive ? "text-emerald-700 font-medium" : "text-rose-700 font-medium"}>
+                                          {isActive ? "Active" : "Inactive"}
+                                        </span>
+                                      </td>
+                                      <td className="py-3 pr-4">
+                                        <button
+                                          className={`btn btn-ghost ${isActive ? "text-rose-600" : "text-emerald-700"}`}
+                                          type="button"
+                                          disabled={updatingAuthorityUserId === u.id}
+                                          onClick={() => setAuthorityUserStatus(u, !isActive)}
+                                        >
+                                          {updatingAuthorityUserId === u.id
+                                            ? "Updating..."
+                                            : (isActive ? "Deactivate" : "Activate")}
+                                        </button>
+                                      </td>
+                                    </>
+                                  );
+                                })()}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {filteredAuthorityUsers.length === 0 && <div className="muted mt-3 text-sm">No authority users found.</div>}
+                      {filteredAuthorityUsers.length > 0 && (
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <div className="muted text-sm">Page {authorityUsersPageData.currentPage} of {authorityUsersPageData.totalPages}</div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="btn btn-ghost"
+                              type="button"
+                              disabled={authorityUsersPageData.currentPage <= 1}
+                              onClick={() => setAuthorityUsersPage((prev) => Math.max(1, prev - 1))}
+                            >
+                              Prev
+                            </button>
+                            <button
+                              className="btn btn-ghost"
+                              type="button"
+                              disabled={authorityUsersPageData.currentPage >= authorityUsersPageData.totalPages}
+                              onClick={() => setAuthorityUsersPage((prev) => Math.min(authorityUsersPageData.totalPages, prev + 1))}
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {authorityUsersMessage.text && (
+                        <div className={`mt-3 text-sm ${authorityUsersMessage.type === "error" ? "text-rose-600" : "text-emerald-600"}`}>
+                          {authorityUsersMessage.text}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {active === "Form Filling Window" && user?.role === "institution_coordinator" && (
+                  <div className="mt-8">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-xl font-semibold font-display">Form Filling Window</h2>
+                      <div className="muted text-sm">Institution Coordinator Control</div>
+                    </div>
+                    <form onSubmit={submitFormWindow} className="mt-4 grid gap-3 md:grid-cols-3">
+                      <input
+                        className="input"
+                        type="date"
+                        value={formWindowForm.start_date}
+                        onChange={(e) => setFormWindowForm((prev) => ({ ...prev, start_date: e.target.value }))}
+                        required
+                      />
+                      <input
+                        className="input"
+                        type="date"
+                        value={formWindowForm.end_date}
+                        onChange={(e) => setFormWindowForm((prev) => ({ ...prev, end_date: e.target.value }))}
+                        required
+                      />
+                      <div className="md:col-span-3 flex justify-end">
+                        <button className="btn btn-primary w-full md:w-auto" type="submit">Save Window</button>
+                      </div>
+                    </form>
+                    <div className="muted mt-3 text-sm">
+                      Applications can be submitted only between selected start and end dates.
+                    </div>
+                    {formWindowMessage && <div className="mt-2 text-sm text-black/70">{formWindowMessage}</div>}
+                  </div>
+                )}
+
+                {active === "Feedback" && (
+                  <div className="mt-8">
+                    <h2 className="text-xl font-semibold font-display">Feedback</h2>
+                    <p className="muted mt-2 text-sm">Share your experience so we can improve the review workflow.</p>
+                    <div className="mt-4 panel p-4">
+                      {feedbackList.length > 0 && (
+                        <div className="mb-3 rounded-xl border border-emerald-300/60 bg-emerald-50/80 px-3 py-2 text-sm text-emerald-800">
+                          You already submitted feedback. Only one submission is allowed.
+                        </div>
+                      )}
+                      <form onSubmit={submitFeedback} className="space-y-4">
+                        <div>
+                          <label className="text-xs uppercase tracking-[0.2em] text-black/40">
+                            Is this website beneficial?
+                          </label>
+                          <select
+                            className="input mt-2"
+                            value={feedbackForm.benefit_status}
+                            onChange={(e) => setFeedbackForm((prev) => ({ ...prev, benefit_status: e.target.value }))}
+                          >
+                            <option value="beneficial">Yes, beneficial</option>
+                            <option value="partially_beneficial">Partially beneficial</option>
+                            <option value="not_beneficial">Not beneficial</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs uppercase tracking-[0.2em] text-black/40">Rating</label>
+                          <select
+                            className="input mt-2"
+                            value={feedbackForm.rating}
+                            onChange={(e) => setFeedbackForm((prev) => ({ ...prev, rating: e.target.value }))}
+                          >
+                            <option value="5">5 - Excellent</option>
+                            <option value="4">4 - Good</option>
+                            <option value="3">3 - Average</option>
+                            <option value="2">2 - Poor</option>
+                            <option value="1">1 - Very Poor</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs uppercase tracking-[0.2em] text-black/40">Message</label>
+                          <textarea
+                            className="input mt-2 h-28"
+                            value={feedbackForm.message}
+                            onChange={(e) => setFeedbackForm((prev) => ({ ...prev, message: e.target.value }))}
+                            placeholder="Write your feedback..."
+                            required
+                          />
+                        </div>
+                        <button className="btn btn-primary" type="submit" disabled={feedbackList.length > 0}>
+                          {feedbackList.length > 0 ? "Submitted" : "Submit Feedback"}
+                        </button>
+                      </form>
+                      {feedbackMessage && (
+                        <div className={`mt-3 text-sm ${feedbackType === "error" ? "text-rose-600" : "text-emerald-600"}`}>
+                          {feedbackMessage}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {feedbackList.map((item) => (
+                        <div key={item.id} className="panel p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-xs uppercase tracking-[0.2em] text-black/50">
+                              Website Benefit: {String(item.benefit_status || "beneficial").replace(/_/g, " ")}
+                            </div>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-sm font-semibold">Rating: {item.rating ?? "-"}/5</div>
+                            <div className="muted text-xs">{new Date(item.created_at).toLocaleString()}</div>
+                          </div>
+                          <div className="mt-2 text-sm text-black/80">{item.message}</div>
+                        </div>
+                      ))}
+                      {feedbackList.length === 0 && (
+                        <div className="muted text-sm">No feedback submitted yet.</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {active === "Profile" && (
+                  <div className="mt-8">
+                    <h2 className="text-xl font-semibold font-display">Profile</h2>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <div className="  panel p-4">
+                        <div className="text-xs uppercase tracking-[0.2em] text-black/40">Name</div>
+                        <div className="mt-2 text-lg font-semibold">{user?.name}</div>
+                      </div>
+                      <div className="panel p-4">
+                        <div className="text-xs uppercase tracking-[0.2em] text-black/40">Email</div>
+                        <div className="mt-2 text-sm">{user?.email}</div>
+                      </div>
+                      <div className="panel p-4">
+                        <div className="text-xs uppercase tracking-[0.2em] text-black/40">Role</div>
+                        <div className="mt-2 text-sm">{ROLE_LABELS[user?.role] || user?.role}</div>
+                      </div>
+                      <div className="panel p-4">
+                        <div className="text-xs uppercase tracking-[0.2em] text-black/40">Department</div>
+                        {editingDepartment ? (
+                          <div className="mt-2 space-y-2">
+                            <select
+                              className="input"
+                              value={departmentDraft}
+                              onChange={(e) => setDepartmentDraft(e.target.value)}
+                            >
+                              <option value="" disabled>Select department</option>
+                              <option value="First Year">First Year</option>
+                              <option value="CSE">CSE</option>
+                              <option value="AIML">AIML</option>
+                              <option value="AIDS">AIDS</option>
+                              <option value="ETC">ETC</option>
+                              <option value="IT">IT</option>
+                              <option value="EE">EE</option>
+                              <option value="ME">ME</option>
+                              <option value="CA (Computer Applications)">CA (Computer Applications)</option>
+                              <option value="BA (Business Administration)">BA (Business Administration)</option>
+                            </select>
+                            <div className="flex flex-wrap gap-2">
+                              <button className="btn btn-primary" type="button" onClick={saveDepartment}>Save</button>
+                              <button
+                                className="btn btn-ghost"
+                                type="button"
+                                onClick={() => {
+                                  setDepartmentDraft(user?.department || "");
+                                  setEditingDepartment(false);
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-2 flex items-center justify-between gap-2">
+                            <div className="text-sm">{user?.department}</div>
+                            <button className="btn btn-ghost" type="button" onClick={() => setEditingDepartment(true)}>
+                              Edit
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {active === "Delete Account" && (
+                  <div className="mt-8">
+                    <h2 className="text-xl font-semibold font-display text-rose-700">Delete Account</h2>
+                    <p className="mt-2 text-sm text-black/70">
+                      This deactivates your account access. Your records are retained in the database.
+                    </p>
+                    <div className="mt-4 panel border-rose-300/70 bg-rose-50 p-4">
+                      <button
+                        className="btn btn-primary bg-rose-600 hover:bg-rose-700 disabled:opacity-60"
+                        type="button"
+                        onClick={openDeleteAccountPopup}
+                        disabled={deletingAccount}
+                      >
+                        {deletingAccount ? "Deleting..." : "Delete My Account"}
+                      </button>
+                      {deleteMessage && <div className="mt-3 text-sm text-rose-700">{deleteMessage}</div>}
+                    </div>
+                  </div>
+                )}
+
+                {active === "Logout" && (
+                  <div className="mt-8">
+                    <h2 className="text-xl font-semibold font-display">Logout</h2>
+                    <p className="muted mt-2 text-sm">You can sign back in anytime.</p>
+                    <button className="btn btn-ghost mt-4" onClick={() => logout(setUser)}>Logout</button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -108,3 +108,24 @@ export const getApprovedAmount = (app) => {
 
   return "-";
 };
+
+export const getApprovedAmountByRole = (app, role) => {
+  const normalizedRole = String(role || "").trim().toLowerCase();
+  if (!normalizedRole) return "-";
+  if (normalizedRole === "institution_coordinator") {
+    return getInstitutionCoordinatorApprovedAmount(app);
+  }
+
+  const data = app?.data || {};
+  const reviews = Array.isArray(data.reviews) ? data.reviews : [];
+  const roleApproval = [...reviews].reverse().find((review) => {
+    if (review?.action !== "approve") return false;
+    if (String(review?.role || "").trim().toLowerCase() !== normalizedRole) return false;
+    const value = pickAmountValue(review);
+    return value !== null && value !== undefined && value !== "";
+  });
+
+  if (!roleApproval) return "-";
+  const normalizedReview = normalizeAmount(pickAmountValue(roleApproval));
+  return normalizedReview !== null ? normalizedReview : "-";
+};

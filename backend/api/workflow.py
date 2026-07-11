@@ -1060,11 +1060,11 @@ def review_application_submission(application_id: int, reviewer: User, payload: 
                 email_recipient_name=applicant_name,
             )
         else:
+            if approved_amount not in {None, ""} and approved_amount < 0:
+                raise ValidationError("Approved amount must be non-negative")
             if role == "institution_coordinator":
                 if approved_amount is None:
                     raise ValidationError("Approved amount is required")
-                if approved_amount < 0:
-                    raise ValidationError("Approved amount must be non-negative")
             next_status = {
                 "department_coordinator": "pending_department_hod",
                 "department_hod": "pending_institution_coordinator",
@@ -1116,13 +1116,14 @@ def review_application_submission(application_id: int, reviewer: User, payload: 
             data["last_reject_role"] = role
             if role == "institution_coordinator":
                 app.approved_amount = None
-        if action == "approve" and role == "institution_coordinator":
-            app.approved_amount = approved_amount
-            data["approved_amount"] = approved_amount
-            data["notification_approved_amount"] = approved_amount
-            data["approved_by_role"] = role
-            data["approved_by_user_id"] = reviewer.id
-            data["approved_at"] = portal_datetime_iso(portal_now())
+        if action == "approve":
+            if role == "institution_coordinator":
+                app.approved_amount = approved_amount
+                data["approved_amount"] = approved_amount
+                data["notification_approved_amount"] = approved_amount
+                data["approved_by_role"] = role
+                data["approved_by_user_id"] = reviewer.id
+                data["approved_at"] = portal_datetime_iso(portal_now())
 
         reviews = data.get("reviews") or []
         if not isinstance(reviews, list):
@@ -1133,7 +1134,7 @@ def review_application_submission(application_id: int, reviewer: User, payload: 
                 "action": action,
                 "reviewer_id": reviewer.id,
                 "remark": remark,
-                "approved_amount": approved_amount if (action == "approve" and role == "institution_coordinator") else None,
+                "approved_amount": approved_amount if action == "approve" else None,
                 "reviewed_at": portal_datetime_iso(portal_now()),
             }
         )
