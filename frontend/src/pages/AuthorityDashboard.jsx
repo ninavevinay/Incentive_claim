@@ -918,7 +918,7 @@ export default function AuthorityDashboard() {
   const selectedYearStatusSegments = buildPieSegments(selectedYearStatusData, selectedYearStatusTotal);
   const studentReportRows = scopedAllApps
     .filter(
-      (app) => String(app?.application_type || "").toLowerCase() === "student" && app?.status === "approved"
+      (app) => (String(app?.application_type || "").toLowerCase() === "student" || String(app?.application_type || "").toLowerCase() === "faculty") && app?.status === "approved"
     )
     .map((app) => {
       const data = app.data || {};
@@ -927,6 +927,7 @@ export default function AuthorityDashboard() {
       return {
         id: app.id,
         applicant: data.applicant_name || data.application_name || "-",
+        type: String(app?.application_type || "").toLowerCase() === "faculty" ? "Faculty" : "Student",
         department: data.department || "-",
         academicYear: formatAcademicYear(data.academic_year, "Not Provided"),
         courseCategory: toReportLabel(data.course_category, "Not Provided"),
@@ -2647,21 +2648,21 @@ export default function AuthorityDashboard() {
                   </div>
                 )}
 
-                {active === "Approved Students" && user?.role === "institution_coordinator" && (
+                {active === "Approved Students / Faculty" && user?.role === "institution_coordinator" && (
                   <div className="mt-8 animate-fade-in">
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-                      <h2 className="text-xl font-semibold font-display">Approved Students</h2>
+                      <h2 className="text-xl font-semibold font-display">Approved Students & Faculty</h2>
                     </div>
                     <div className="grid min-h-0 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
                       <aside className="panel space-y-4 p-4">
-                        <div className="text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">Approved Student Search</div>
+                        <div className="text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">Approved Applicant Search</div>
                         <div>
                           <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[color:var(--ink-soft)]">
                             Search by Name
                           </label>
                           <input
                             className="input"
-                            placeholder="Student name"
+                            placeholder="Applicant name"
                             value={reportStudentSearch}
                             onChange={(e) => setReportStudentSearch(e.target.value)}
                           />
@@ -2713,12 +2714,13 @@ export default function AuthorityDashboard() {
                       </aside>
 
                       <div className="panel p-4">
-                        <h3 className="text-sm font-semibold text-[color:var(--ink)]">Approved Students List</h3>
+                        <h3 className="text-sm font-semibold text-[color:var(--ink)]">Approved Applicants List</h3>
                         <div className="mt-3 overflow-x-auto">
                           <table className="data-table min-w-[720px]">
                             <thead>
                               <tr>
                                 <th>Name</th>
+                                <th>Type</th>
                                 <th>Academic Year</th>
                                 <th>Department</th>
                                 <th>Category</th>
@@ -2729,6 +2731,7 @@ export default function AuthorityDashboard() {
                               {filteredStudentRows.map((row) => (
                                 <tr key={row.id}>
                                   <td className="font-medium">{row.applicant}</td>
+                                  <td>{row.type}</td>
                                   <td>{row.academicYear}</td>
                                   <td>{row.department}</td>
                                   <td>{row.courseCategory}</td>
@@ -2738,7 +2741,7 @@ export default function AuthorityDashboard() {
                             </tbody>
                           </table>
                           {filteredStudentRows.length === 0 && (
-                            <div className="mt-3 text-sm text-[color:var(--ink-soft)]">No approved student applications found.</div>
+                            <div className="mt-3 text-sm text-[color:var(--ink-soft)]">No approved applications found.</div>
                           )}
                         </div>
                       </div>
