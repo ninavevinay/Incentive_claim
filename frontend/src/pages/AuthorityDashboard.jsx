@@ -357,7 +357,7 @@ export default function AuthorityDashboard() {
   const graphContainerRef = useRef(null);
   const allGraphsPdfRef = useRef(null);
   const menu = user?.role === "institution_coordinator"
-    ? [...baseMenu.slice(0, 4), "Approved Students", ...baseMenu.slice(4, 6), "Reports", "Notice", "Authority Users", "Form Filling Window", ...baseMenu.slice(6)]
+    ? [...baseMenu.slice(0, 4), "Approved Students / Faculty", ...baseMenu.slice(4, 6), "Reports", "Notice", "Authority Users", "Form Filling Window", ...baseMenu.slice(6)]
     : baseMenu;
 
   useEffect(() => {
