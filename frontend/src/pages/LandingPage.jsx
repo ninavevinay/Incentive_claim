@@ -5,7 +5,7 @@ import { api, resolveMediaUrl } from "../lib/api.js";
 const HERO_TITLE = "SBJIT NPTEL Reimburse";
 
 const HERO_DESCRIPTION =
-  "Apply for NPTEL and academic incentives with a single digital workflow for students, faculty, and departments.";
+  "Apply for NPTEL and academic incentives with a single digital workflow for students, faculty, and departments";
 
 const HERO_SLIDES = [
   {
