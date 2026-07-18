@@ -20,20 +20,37 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            set -e
+
             cd /var/www/Incentive_claim
 
+            echo "Updating repository..."
             git fetch origin
             git reset --hard origin/main
+            git clean -fd
 
+            echo "Deploying Django backend..."
             cd backend
             source venv/bin/activate
             pip install -r requirements.txt
             python manage.py migrate
             python manage.py collectstatic --noinput
-            sudo systemctl daemon-reload
             sudo systemctl restart django
 
+            echo "Building React frontend..."
             cd ../frontend
+
+            # Remove old build
+            rm -rf dist
+
+            # Install dependencies
             npm ci
+
+            # Build new frontend
             npm run build
-            sudo systemctl restart nginx
+
+            # Reload Nginx
+            sudo nginx -t
+            sudo systemctl reload nginx
+
+            echo "Deployment completed successfully!"
