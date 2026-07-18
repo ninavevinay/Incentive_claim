@@ -20,21 +20,42 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            set -e
+
+            echo "===== Updating Repository ====="
             cd /var/www/Incentive_claim
 
-            git fetch origin
+            # Update repository
+            git fetch --all
             git reset --hard origin/main
+            git clean -fd
 
+            echo "===== Deploying Backend ====="
             cd backend
+
             source venv/bin/activate
             pip install -r requirements.txt
+
             python manage.py migrate
             python manage.py collectstatic --noinput
+
             sudo systemctl daemon-reload
             sudo systemctl restart django
 
+            echo "===== Building Frontend ====="
             cd ../frontend
+
+            # Remove previous build
             rm -rf dist
+
+            # Install dependencies
             npm ci
+
+            # Create new production build
             npm run build
-            sudo systemctl restart nginx
+
+            echo "===== Restarting Nginx ====="
+            sudo nginx -t
+            sudo systemctl reload nginx
+
+            echo "===== Deployment Successful ====="
