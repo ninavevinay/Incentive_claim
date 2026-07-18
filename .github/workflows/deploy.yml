@@ -25,7 +25,6 @@ jobs:
             echo "===== Updating Repository ====="
             cd /var/www/Incentive_claim
 
-            # Update repository
             git fetch --all
             git reset --hard origin/main
             git clean -fd
@@ -34,10 +33,10 @@ jobs:
             cd backend
 
             source venv/bin/activate
+
             pip install -r requirements.txt
 
             python manage.py migrate
-            python manage.py collectstatic --noinput
 
             sudo systemctl daemon-reload
             sudo systemctl restart django
@@ -45,13 +44,13 @@ jobs:
             echo "===== Building Frontend ====="
             cd ../frontend
 
-            # Remove previous build
+            # Remove old production build
             rm -rf dist
 
             # Install dependencies
             npm ci
 
-            # Create new production build
+            # Build React (Vite)
             npm run build
 
             echo "===== Restarting Nginx ====="
