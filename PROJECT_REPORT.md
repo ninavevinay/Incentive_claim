@@ -60,7 +60,7 @@ Important access rules:
 - Admin self-registration is restricted to an allowlist
 
 ## 5. System Architecture
-The portal is organized into four layers:
+The portal is organized into four layers and a gateway-first service split:
 
 ### 5.1 Presentation Layer
 The React frontend provides:
@@ -96,6 +96,20 @@ The database stores:
 - Notices
 - Form window dates
 - Feedback
+
+### 5.5 Service Boundaries
+The backend now supports service-specific API slices behind the same Django codebase. This keeps the current application working while allowing separate deployable roles:
+
+| Service | Scope |
+| --- | --- |
+| Gateway | Full API for the frontend and default deployments |
+| Auth | OTP, login, registration, password reset, profile |
+| Applications | Submissions, review workflow, feedback, notifications |
+| Admin | Admin operations, notices, audit views |
+| Notifications | Notification listing and read-state updates |
+| Public | Health, homepage data, public notices, highlights |
+
+The service role is selected with `SERVICE_NAME`.
 
 ## 6. Core Modules
 ### Frontend Modules

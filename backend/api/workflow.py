@@ -642,6 +642,8 @@ def _normalize_upload_payload(applicant_name: str, data: dict, *, include_bank_p
     certificate_file = _required_upload_file(data, "certificate_file", "Certificate file")
     photograph_file = _required_upload_file(data, "photograph_file", "Photograph file")
 
+    applicant_photo = save_photograph_upload(photograph_file, applicant_name)
+
     payload = {
         "department": department,
         "applicant_name": applicant_name,
@@ -662,7 +664,8 @@ def _normalize_upload_payload(applicant_name: str, data: dict, *, include_bank_p
         "permissible_claim": permissible_claim,
         "fee_receipt_file": save_upload(fee_receipt_file, applicant_name, "fee_receipt"),
         "certificate_file": save_upload(certificate_file, applicant_name, "certificate"),
-        "photograph_file": save_photograph_upload(photograph_file, applicant_name),
+        "photograph_file": applicant_photo,
+        "applicant_photo": applicant_photo,
         "signature_file": save_upload(
             data.get("signature_file"),
             applicant_name,

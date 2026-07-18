@@ -15,15 +15,15 @@ const blobToDataUrl = (blob) =>
     reader.readAsDataURL(blob);
   });
 
-const loadSignatureImage = async (signatureFilePath) => {
-  const path = String(signatureFilePath ?? "").trim();
+const loadImageAttachment = async (filePath) => {
+  const path = String(filePath ?? "").trim();
   if (!path) return null;
 
-  const signatureUrl = resolveMediaUrl(path);
-  if (!signatureUrl) return null;
+  const attachmentUrl = resolveMediaUrl(path);
+  if (!attachmentUrl) return null;
 
   try {
-    const response = await fetch(signatureUrl);
+    const response = await fetch(attachmentUrl);
     if (!response.ok) return null;
     const blob = await response.blob();
     const mimeType = String(blob.type || response.headers.get("content-type") || "").toLowerCase();
@@ -37,6 +37,8 @@ const loadSignatureImage = async (signatureFilePath) => {
     return null;
   }
 };
+
+const loadSignatureImage = async (signatureFilePath) => loadImageAttachment(signatureFilePath);
 
 const toText = (value, fallback = "-") => {
   const text = String(value ?? "").trim();
@@ -94,10 +96,13 @@ const drawSectionTitle = (doc, title, cursorY, margin, pageWidth) => {
   return cursorY + barHeight + 3;
 };
 
-const drawTwoColumnTable = (doc, autoTable, rows, cursorY, margin, pageWidth) => {
+const drawTwoColumnTable = (doc, autoTable, rows, cursorY, margin, pageWidth, options = {}) => {
+  const rightMargin = options.rightMargin ?? margin;
+  const tableWidth = pageWidth - margin - rightMargin;
+  const labelWidth = options.labelWidth ?? Math.min(195, Math.max(150, Math.round(tableWidth * 0.44)));
   autoTable(doc, {
     startY: cursorY,
-    margin: { left: margin, right: margin },
+    margin: { left: margin, right: rightMargin },
     body: rows,
     theme: "grid",
     styles: {
@@ -112,11 +117,54 @@ const drawTwoColumnTable = (doc, autoTable, rows, cursorY, margin, pageWidth) =>
     },
     alternateRowStyles: { fillColor: STRIPE_COLOR },
     columnStyles: {
-      0: { cellWidth: 195, fontStyle: "bold" },
-      1: { cellWidth: pageWidth - (margin * 2) - 195 }
+      0: { cellWidth: labelWidth, fontStyle: "bold" },
+      1: { cellWidth: Math.max(120, tableWidth - labelWidth) }
     }
   });
   return (doc.lastAutoTable?.finalY || cursorY) + 8;
+};
+
+const drawApplicantPhotoBlock = (doc, photoImage, x, y, width, height) => {
+  doc.setDrawColor(...BORDER_COLOR);
+  doc.setLineWidth(0.8);
+  doc.rect(x, y, width, height);
+
+  const headerHeight = 18;
+  doc.setFillColor(243, 244, 246);
+  doc.rect(x, y, width, headerHeight, "F");
+  doc.setTextColor(...HEADER_COLOR);
+  doc.setFont("times", "bold");
+  doc.setFontSize(9);
+  doc.text("Applicant Photograph", x + (width / 2), y + 12, { align: "center" });
+
+  if (photoImage?.dataUrl) {
+    const padding = 6;
+    const contentY = y + headerHeight + padding;
+    const maxWidth = width - (padding * 2);
+    const maxHeight = height - headerHeight - (padding * 2);
+    let drawWidth = maxWidth;
+    let drawHeight = maxHeight;
+
+    try {
+      const imageProps = doc.getImageProperties(photoImage.dataUrl);
+      if (imageProps?.width && imageProps?.height) {
+        const scale = Math.min(maxWidth / imageProps.width, maxHeight / imageProps.height);
+        drawWidth = imageProps.width * scale;
+        drawHeight = imageProps.height * scale;
+      }
+    } catch {
+      // Keep default draw dimensions when image properties cannot be resolved.
+    }
+
+    const drawX = x + padding + ((maxWidth - drawWidth) / 2);
+    const drawY = contentY + ((maxHeight - drawHeight) / 2);
+    doc.addImage(photoImage.dataUrl, photoImage.format, drawX, drawY, drawWidth, drawHeight, undefined, "FAST");
+  } else {
+    doc.setTextColor(100, 116, 139);
+    doc.setFont("times", "normal");
+    doc.setFontSize(8.5);
+    doc.text("Photo not available", x + (width / 2), y + (height / 2) + 6, { align: "center" });
+  }
 };
 
 const drawDeclarationBlock = (doc, cursorY, margin, pageWidth, accepted) => {
@@ -300,6 +348,14 @@ export const exportApplicationFormPdf = async (app) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const headerImageDataUrl = await getPdfHeaderImageDataUrl().catch(() => null);
   const signatureImage = await loadSignatureImage(data?.signature_file);
+  const photographImage = await loadImageAttachment(
+    data?.applicant_photo ||
+      data?.photograph_file ||
+      data?.photograph ||
+      data?.photographFile ||
+      data?.photo_file ||
+      data?.photo
+  );
   let headerRenderCount = 0;
 
   const drawPageHeader = () => {
@@ -326,7 +382,33 @@ export const exportApplicationFormPdf = async (app) => {
     return true;
   };
 
-  drawSimpleSection("Applicant's Details", buildApplicantRows(app, data), 120);
+  const drawApplicantSection = () => {
+    const rows = buildApplicantRows(app, data);
+    if (!rows || rows.length === 0) return false;
+
+    const photoWidth = photographImage?.dataUrl ? 104 : 0;
+    const photoHeight = photographImage?.dataUrl ? 136 : 0;
+    const photoGap = photographImage?.dataUrl ? 12 : 0;
+    const rightMargin = photographImage?.dataUrl ? margin + photoWidth + photoGap : margin;
+
+    cursorY = ensurePageSpace(doc, cursorY, 180, drawPageHeader);
+    cursorY = drawSectionTitle(doc, `${sectionNumber}. Applicant's Details`, cursorY, margin, pageWidth);
+
+    if (photographImage?.dataUrl) {
+      const photoX = pageWidth - margin - photoWidth;
+      const photoY = cursorY + 4;
+      drawApplicantPhotoBlock(doc, photographImage, photoX, photoY, photoWidth, photoHeight);
+    }
+
+    cursorY = drawTwoColumnTable(doc, autoTable, rows, cursorY, margin, pageWidth, {
+      rightMargin,
+      labelWidth: 195
+    });
+    sectionNumber += 1;
+    return true;
+  };
+
+  drawApplicantSection();
   drawSimpleSection("Course Details", buildCourseRows(data), 120);
   drawSimpleSection("Financial Details", buildFinancialRows(app, data), 110);
 

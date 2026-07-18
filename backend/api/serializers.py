@@ -141,6 +141,14 @@ class ApplicationOutSerializer(serializers.ModelSerializer):
         model = Application
         fields = ("id", "application_type", "status", "approved_amount", "data", "created_at")
 
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        data = dict(representation.get("data") or {})
+        if not data.get("applicant_photo") and data.get("photograph_file"):
+            data["applicant_photo"] = data["photograph_file"]
+        representation["data"] = data
+        return representation
+
 
 class PublicApprovedHighlightOutSerializer(serializers.Serializer):
     id = serializers.IntegerField()

@@ -2530,7 +2530,7 @@ export default function AuthorityDashboard() {
                           <div className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
                             {app.application_type ? `ID: ${app.id} | Type: ${app.application_type}` : `ID: ${app.id}`}
                           </div>
-                          <div className="mt-4 grid gap-3 text-sm md:grid-cols-2" style={{ color: "var(--text-secondary)" }}>
+                          <div className="mt-4 grid gap-3 text-sm md:grid-cols-3" style={{ color: "var(--text-secondary)" }}>
                             {[
                               ["Applicant", app.data.applicant_name || app.data.application_name || ""],
                               ["Department", app.data.department],
@@ -2563,21 +2563,32 @@ export default function AuthorityDashboard() {
                               .map(([lbl, val]) => (
                                 <div key={lbl}><span style={{ color: "var(--text-muted)" }}>{lbl}:</span> {val}</div>
                               ))}
-                            {[
+                          </div>
+                          {(() => {
+                            const documentItems = [
                               ["Fee Receipt", app.data.fee_receipt_file],
                               ["Certificate", app.data.certificate_file],
                               ["Bank Passbook", app.data.bank_passbook_file],
                               ["Photograph", app.data.photograph_file],
                               ["Signature", app.data.signature_file]
-                            ]
-                              .filter(([, path]) => isDisplayValue(path))
-                              .map(([lbl, path]) => (
-                                <div key={lbl}><span style={{ color: "var(--text-muted)" }}>{lbl}:</span> {docLink(path)}</div>
-                              ))}
-                          </div>
-                          <div className="mt-5 pt-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                            ].filter(([, path]) => isDisplayValue(path));
+                            if (documentItems.length === 0) return null;
+                            return (
+                              
+                                <div className="mt-3 grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-3" style={{ color: "var(--text-secondary)" }}>
+                                  {documentItems.map(([lbl, path]) => (
+                                    <div key={lbl}>
+                                      <span style={{ color: "var(--text-muted)" }}>{lbl}:</span> {docLink(path)}
+                                    </div>
+                                  ))}
+                           
+                                </div>
+                              
+                            );
+                          })()}
+                          <div className="mt-1 pt-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
                             <label className="text-xs uppercase tracking-widest font-medium" style={{ color: "var(--text-muted)" }}>Rejection Remark (required)</label>
-                            <textarea className="input mt-2 h-24" value={rejectRemarks[app.id] || ""} onChange={(e) => setRejectRemarks((prev) => ({ ...prev, [app.id]: e.target.value }))} />
+                            <textarea className="input mt-2 h-10" value={rejectRemarks[app.id] || ""} onChange={(e) => setRejectRemarks((prev) => ({ ...prev, [app.id]: e.target.value }))} />
                           </div>
                           {(user?.role === "department_coordinator" || user?.role === "institution_coordinator") && (
                             <div className="mt-4">
@@ -2587,7 +2598,7 @@ export default function AuthorityDashboard() {
                                   : "Coordinator Approved Amount (Rs, optional)"}
                               </label>
                               <input
-                                className="input mt-2"
+                                className="input mt-1"
                                 type="text"
                                 inputMode="decimal"
                                 placeholder="0.00"
@@ -2603,7 +2614,7 @@ export default function AuthorityDashboard() {
                           )}
                           <div className="mt-5 flex flex-wrap gap-3">
                             <button className="btn btn-ghost" type="button" onClick={() => setSelectedApplication(app)}>
-                              View Form
+                              Track
                             </button>
                             <button className="btn btn-primary" type="button" onClick={() => review(app.id, "approve")}>Approve</button>
                             <button className="btn btn-ghost" type="button" onClick={() => review(app.id, "reject")}>Reject</button>
@@ -2998,7 +3009,7 @@ export default function AuthorityDashboard() {
                               type="button"
                               onClick={() => setSelectedApplication(app)}
                             >
-                              View Form
+                              Track
                             </button>
                           </div>
                         </div>
@@ -3092,7 +3103,7 @@ export default function AuthorityDashboard() {
                               type="button"
                               onClick={() => setSelectedApplication(app)}
                             >
-                              View Form
+                              Track
                             </button>
                           </div>
                         </div>
@@ -3711,6 +3722,7 @@ export default function AuthorityDashboard() {
       <ApplicationDetailsPopup
         open={Boolean(selectedApplication)}
         application={selectedApplication}
+        allApplications={allApps}
         hideEmptyFields
         onClose={() => setSelectedApplication(null)}
       />

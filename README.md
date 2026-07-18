@@ -5,6 +5,7 @@ Private internal platform for students, faculty, authorities, and admins to subm
 ## Stack
 - Frontend: React + Vite + Tailwind CSS
 - Backend: Django + Django REST Framework + PostgreSQL
+- Architecture: gateway-first microservice layout with service-specific API slices
 - Auth: Email OTP to `@sbjit.edu.in` addresses + JWT session token
 - File storage: local `backend/uploads`
 
@@ -50,6 +51,7 @@ SMTP_FROM_NAME=SBJIT NPTEL Reimburse
 SMTP_USE_TLS=true
 SMTP_USE_SSL=false
 PORT=8000
+SERVICE_NAME=gateway
 OTP_EXPIRE_MINUTES=10
 OTP_RESEND_SECONDS=60
 OTP_LENGTH=6
@@ -80,6 +82,18 @@ Production run example:
 ```bash
 gunicorn portal_backend.wsgi:application --bind 0.0.0.0:8000
 ```
+
+### Service Modes
+The backend router can expose a narrower API slice by setting `SERVICE_NAME` before startup.
+
+- `gateway`: full API surface for the frontend
+- `auth`: OTP, login, registration, password reset, profile
+- `applications`: submissions, reviews, feedback, notifications
+- `admin`: admin console APIs and notices
+- `notifications`: notification endpoints only
+- `public`: public notices and highlights
+
+The frontend should continue targeting the gateway mode for normal use.
 
 ### 3) Frontend
 ```bash

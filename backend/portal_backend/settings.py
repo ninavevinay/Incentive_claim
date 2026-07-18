@@ -83,6 +83,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
 ]
 
+SERVICE_NAME = os.getenv("SERVICE_NAME", "gateway").strip().lower() or "gateway"
 ROOT_URLCONF = "portal_backend.urls"
 
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
