@@ -22,35 +22,39 @@ jobs:
           script: |
             set -e
 
+            echo "===== Updating Repository ====="
             cd /var/www/Incentive_claim
 
-            echo "Updating repository..."
-            git fetch origin
+            git fetch --all
             git reset --hard origin/main
             git clean -fd
 
-            echo "Deploying Django backend..."
+            echo "===== Deploying Backend ====="
             cd backend
             source venv/bin/activate
+
             pip install -r requirements.txt
+
             python manage.py migrate
             python manage.py collectstatic --noinput
+
+            sudo systemctl daemon-reload
             sudo systemctl restart django
 
-            echo "Building React frontend..."
+            echo "===== Building Frontend ====="
             cd ../frontend
 
             # Remove old build
             rm -rf dist
 
-            # Install dependencies
+            # Install packages
             npm ci
 
-            # Build new frontend
+            # Build latest frontend
             npm run build
 
-            # Reload Nginx
+            echo "===== Restarting Nginx ====="
             sudo nginx -t
             sudo systemctl reload nginx
 
-            echo "Deployment completed successfully!"
+            echo "===== Deployment Completed Successfully ====="
