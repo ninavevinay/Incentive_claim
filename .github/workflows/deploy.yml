@@ -33,21 +33,23 @@ jobs:
             mkdir -p uploads
             if [ ! -d "venv" ]; then python3 -m venv venv; fi
             source venv/bin/activate
-            pip install --upgrade pip
+            pip install --upgrade pip setuptools wheel
             pip install -r requirements.txt
 
             echo "===== Configuring & Restarting FastAPI Service ====="
-            printf "[Unit]\nDescription=FastAPI Backend Service\nAfter=network.target\n\n[Service]\nUser=ubuntu\nWorkingDirectory=/var/www/Incentive_claim/backend\nExecStart=/var/www/Incentive_claim/backend/venv/bin/gunicorn -c gunicorn.conf.py app.main:app\nRestart=always\nRestartSec=3\n\n[Install]\nWantedBy=multi-user.target\n" | sudo tee /etc/systemd/system/fastapi.service > /dev/null
+            printf "[Unit]\nDescription=FastAPI Backend Service\nAfter=network.target\n\n[Service]\nUser=ubuntu\nWorkingDirectory=/var/www/Incentive_claim/backend\nEnvironmentFile=-/var/www/Incentive_claim/backend/.env\nExecStart=/var/www/Incentive_claim/backend/venv/bin/gunicorn -c gunicorn.conf.py app.main:app\nRestart=always\nRestartSec=3\n\n[Install]\nWantedBy=multi-user.target\n" | sudo tee /etc/systemd/system/fastapi.service > /dev/null
 
             sudo systemctl daemon-reload
             sudo systemctl enable fastapi
             sudo systemctl restart fastapi || sudo systemctl restart portal-backend || true
+            sudo chmod -R 755 /var/www/Incentive_claim/backend/uploads || true
 
             echo "===== Building Frontend Static Files ====="
             cd /var/www/Incentive_claim/frontend
             rm -rf dist node_modules/.vite
             npm ci
             npm run build
+            sudo chmod -R 755 /var/www/Incentive_claim/frontend/dist || true
 
             echo "===== Restarting Nginx ====="
             sudo nginx -t
