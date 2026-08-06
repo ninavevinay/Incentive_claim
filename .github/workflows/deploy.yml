@@ -32,27 +32,46 @@ jobs:
             echo "===== Deploying FastAPI Backend ====="
             cd backend
 
+            mkdir -p uploads
+
+            if [ ! -d "venv" ]; then
+              python3 -m venv venv
+            fi
             source venv/bin/activate
 
+            pip install --upgrade pip
             pip install -r requirements.txt
 
+            echo "===== Configuring & Restarting FastAPI Systemd Service ====="
+            echo "[Unit]
+            Description=FastAPI Backend Service
+            After=network.target
+
+            [Service]
+            User=ubuntu
+            WorkingDirectory=/var/www/Incentive_claim/backend
+            EnvironmentFile=/var/www/Incentive_claim/backend/.env
+            ExecStart=/var/www/Incentive_claim/backend/venv/bin/gunicorn -c gunicorn.conf.py app.main:app
+            Restart=always
+            RestartSec=3
+
+            [Install]
+            WantedBy=multi-user.target" | sudo tee /etc/systemd/system/fastapi.service > /dev/null
+
             sudo systemctl daemon-reload
+            sudo systemctl enable fastapi
             sudo systemctl restart fastapi || sudo systemctl restart portal-backend || true
 
-            echo "===== Building Frontend ====="
+            echo "===== Building Frontend Production Static Files ====="
             cd ../frontend
 
-            # Remove old production build
-            rm -rf dist
+            rm -rf dist node_modules/.vite
 
-            # Install dependencies
             npm ci
-
-            # Build React (Vite)
             npm run build
 
             echo "===== Restarting Nginx ====="
             sudo nginx -t
-            sudo systemctl reload nginx
+            sudo systemctl reload nginx || sudo systemctl restart nginx
 
             echo "===== Deployment Successful ====="
