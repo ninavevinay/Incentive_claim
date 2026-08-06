@@ -29,17 +29,15 @@ jobs:
             git reset --hard origin/main
             git clean -fd
 
-            echo "===== Deploying Backend ====="
+            echo "===== Deploying FastAPI Backend ====="
             cd backend
 
             source venv/bin/activate
 
             pip install -r requirements.txt
 
-            python manage.py migrate
-
             sudo systemctl daemon-reload
-            sudo systemctl restart django
+            sudo systemctl restart fastapi || sudo systemctl restart portal-backend || true
 
             echo "===== Building Frontend ====="
             cd ../frontend

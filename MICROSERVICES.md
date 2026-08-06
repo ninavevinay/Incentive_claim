@@ -1,6 +1,6 @@
-# Microservice Architecture Map
+# FastAPI Microservice & Distributed Architecture Map
 
-This repository currently ships as a working Django + React platform. To support a microservice-style deployment without breaking the existing app, the backend now exposes service-specific URL configurations that can be launched independently.
+This repository ships as a high-performance **FastAPI + Redis + React** platform.
 
 ## Service Roles
 
@@ -11,25 +11,22 @@ This repository currently ships as a working Django + React platform. To support
 - `notifications`: notification listing and read-state updates
 - `public`: homepage health checks, public notices, and public highlights
 
-## Runtime Controls
+## Runtime Controls & Redis Integration
 
 - `SERVICE_NAME` identifies the process role
-- `ROOT_URLCONF` stays on the main Django router; the router selects the API slice from `SERVICE_NAME`
+- `REDIS_URL` configures the distributed Redis instance for sliding-window rate limiting, JWT token blacklisting, and query response caching.
 
 Examples:
 
 ```env
 SERVICE_NAME=gateway
+REDIS_URL=redis://localhost:6379/0
 ```
 
-```env
-SERVICE_NAME=auth
+## Running Backend
+
+```bash
+cd backend
+python main.py
 ```
 
-```env
-SERVICE_NAME=applications
-```
-
-## Suggested Next Step
-
-For a true distributed setup, the next step is to split the shared Django logic into separate deployable services with their own databases and async communication between them. The current structure is the safest bridge toward that goal.

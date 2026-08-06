@@ -5,9 +5,9 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from django.conf import settings
-from jose import jwt
+from jose import JWTError, jwt
 
+from .config import settings
 
 _HASH_PREFIX = "bcrypt-sha256$"
 _AUTH_PLACEHOLDER_PREFIX = "email-otp$"
@@ -28,18 +28,24 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return bcrypt.checkpw(_prehash_password(plain_password), stored)
     try:
         return bcrypt.checkpw(plain_password.encode("utf-8"), str(hashed_password).encode("utf-8"))
-    except ValueError:
+    except Exception:
         return False
 
 
-def create_access_token(subject: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    payload = {"sub": subject, "exp": expire}
+def create_access_token(subject: str, expires_delta: timedelta | None = None) -> str:
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {"sub": str(subject), "exp": expire}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict:
-    return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    try:
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except JWTError as e:
+        raise ValueError(f"Invalid token: {e}") from e
 
 
 def normalize_email(email: str | None) -> str:

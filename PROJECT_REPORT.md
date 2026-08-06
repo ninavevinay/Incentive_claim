@@ -1,473 +1,276 @@
 # SBJIT NPTEL Reimburse Project Report
 
 ## 1. Executive Summary
-SBJIT NPTEL Reimburse is an internal web portal designed to manage academic incentive claims for NPTEL and certification courses. The system supports student and faculty application submission, department and institution level approval, admin user management, OTP-based registration and password reset, PDF form generation, and transparent status tracking.
+SBJIT NPTEL Reimburse is an internal web portal designed to manage academic incentive reimbursement claims for NPTEL and certification courses at SBJIT. The system supports student and faculty application submissions, department and institution-level approval routing, admin user management, OTP-based registration and password reset, PDF form generation, and transparent status tracking.
 
-The application is built as a two-part system:
-- A React frontend for the public site and dashboards
-- A Django REST backend for authentication, workflow rules, data validation, file handling, and approvals
+The application is engineered as a modern, decoupled web system:
+- **Frontend**: A responsive React (Vite) single-page application for public landing and role-based user dashboards.
+- **Backend**: A high-performance FastAPI service layer handling authentication, business workflows, Pydantic validation, file storage, Redis rate limiting, and database interactions via SQLAlchemy 2.0.
 
-This report documents the purpose, architecture, modules, workflow, and operational behavior of the current implementation.
+This report documents the architectural design, database schemas, module structures, workflows, and operational specifications of the application.
+
+---
 
 ## 2. Project Objective
-The main objective of the portal is to digitize the incentive reimbursement process and reduce manual paperwork. It provides:
-- Secure registration and login
-- Role-based access control
-- Structured application forms
-- Multi-level approval workflow
-- Upload and storage of supporting documents
-- PDF export of submitted forms
-- Administrative control for users, notices, and form windows
+The main objective of the portal is to digitize and automate the academic incentive reimbursement workflow to eliminate manual paperwork and speed up approvals. Key operational features include:
+- Secure OTP-verified registration and authentication.
+- Strict role-based access control (RBAC).
+- Dynamic application forms tailored for students and faculty.
+- Multi-stage sequential approval workflow (Department Coordinator -> Department HOD -> Institution Coordinator).
+- Document validation and secure storage under `backend/uploads`.
+- Printable client-side PDF form export complete with signature blocks and office review tables.
+- Comprehensive administrative control panel for managing users, notices, form submission windows, and audit logs.
+
+---
 
 ## 3. Technology Stack
+
 ### Frontend
-- React 18
-- Vite
-- React Router
-- Tailwind CSS
-- Lucide React icons
-- jsPDF and jsPDF-AutoTable for form export
+- **Framework**: React 18 with Vite
+- **Routing**: React Router DOM (v6)
+- **Styling**: Tailwind CSS with custom theme variables
+- **Icons**: Lucide React
+- **Document Export**: jsPDF and jsPDF-AutoTable for client-side PDF rendering
 
 ### Backend
-- Django
-- Django REST Framework
-- PostgreSQL
-- JWT-based authentication
-- Bcrypt password hashing
-- Email OTP workflow
+- **Framework**: FastAPI (v0.115)
+- **ASGI Server**: Uvicorn (Development) / Gunicorn with Uvicorn Workers (Production)
+- **ORM & Database**: SQLAlchemy 2.0 with PostgreSQL (`psycopg3` driver)
+- **Validation**: Pydantic v2
+- **Caching & Rate Limiting**: Redis (v5.2 async client with automatic `fakeredis` fallback for development)
+- **Security & Tokens**: JWT (`python-jose`) and Password Hashing (`bcrypt`)
+- **Email Dispatch**: Built-in async SMTP client supporting TLS/SSL
 
-### Storage and Assets
+### Storage & Assets
 - Local file storage under `backend/uploads`
-- Image and PDF uploads with server-side validation
-- Public assets for branding, hero banners, and notices
+- Server-side mime type, file size (max 150KB), and image dimension validation
+- Static asset serving via FastAPI `StaticFiles` mounting
 
-## 4. User Roles
-The system uses role-based access control. The major roles are:
+---
+
+## 4. User Roles & Access Control
+The portal enforces strict role-based access control across 6 distinct user roles:
 
 | Role | Responsibility |
 | --- | --- |
-| Student | Submit student applications, track status, print form, manage profile |
-| Faculty | Submit faculty applications, track status, print form, manage profile |
-| Department Coordinator | First-level review for users in the same department |
-| Department HOD | Second-level review for users in the same department |
-| Institution Coordinator | Final approval and approved amount entry |
-| Admin | Create authority users, manage users, notices, applications, form window, and logs |
+| **Student** | Submit student reimbursement claims, track status, download PDF forms, manage profile |
+| **Faculty** | Submit faculty reimbursement claims, track status, download PDF forms, manage profile |
+| **Department Coordinator** | First-stage review for applications within their designated department |
+| **Department HOD** | Second-stage review and recommendation for applications within their department |
+| **Institution Coordinator** | Final approval stage and entry of approved reimbursement amounts |
+| **Admin** | Create authority accounts, manage all users, update notices, toggle form submission windows, and review login/password reset audit logs |
 
-Important access rules:
-- Only `@sbjit.edu.in` email addresses are allowed
-- Student and faculty accounts are self-registered through OTP
-- Authority users are created by admin
-- Admin self-registration is restricted to an allowlist
+### Key Access Rules
+- Email addresses must belong to the institution domain (`@sbjit.edu.in`).
+- Student and faculty accounts self-register via email OTP verification.
+- Authority accounts (Coordinators & HODs) cannot self-register; they are provisioned directly by an Admin.
+- Admin account self-registration is restricted to emails configured in `ADMIN_EMAIL_ALLOWLIST`.
+
+---
 
 ## 5. System Architecture
-The portal is organized into four layers and a gateway-first service split:
+The application follows a clean 4-tier layer model with an optional gateway microservice slice architecture.
 
 ### 5.1 Presentation Layer
-The React frontend provides:
-- Landing page with public information
-- Login and registration pages
-- Separate dashboards for student, faculty, authority, and admin users
-- Responsive layout with a mobile hamburger menu and desktop sidebar
+The React single-page frontend provides:
+- Public landing page featuring portal statistics, highlights, and notice boards.
+- Dedicated dashboards for Student, Faculty, Authority, and Admin views.
+- Mobile-responsive navigation featuring a collapsible sidebar drawer and top application header.
 
 ### 5.2 API Layer
-The Django REST backend exposes endpoints for:
-- Authentication
-- Application submission
-- Review and approval
-- User and admin management
-- Notices, feedback, and tracking
+The FastAPI backend exposes RESTful endpoints with Pydantic request/response validation schemas covering:
+- Authentication & OTP operations (`/api/auth`)
+- User profiles (`/api/profile`)
+- Application submissions & review routing (`/api/applications`)
+- Administrative operations (`/api/admin`)
+- Notices & Feedback (`/api/notices`, `/api/feedback`)
+- System Health (`/health`)
 
 ### 5.3 Business Logic Layer
-Workflow rules are implemented in backend service functions. These rules control:
-- Who can register
-- Which role can submit which form
-- Which review stage is currently valid
-- Which department can review a request
-- Whether the form window is open
-- Whether file and field validation passes
+Business logic and workflow rules are encapsulated within FastAPI router controllers and core services:
+- Verification of `@sbjit.edu.in` domain and allowlisted admin emails.
+- Submission constraints (max 2 applications per 6-month period per user).
+- Active form submission window enforcement.
+- Sequential review stage validation and department isolation.
+- Image optimization and file type/size validation.
 
 ### 5.4 Data Layer
-The database stores:
-- Users
-- Applications
-- Notifications and email logs
-- OTP records
-- Password reset records
-- Notices
-- Form window dates
-- Feedback
+- **PostgreSQL**: Primary relational database storing users, applications, notifications, notices, form windows, and audit events.
+- **Redis**: In-memory cache layer managing sliding-window API rate limiting, JWT token blacklist, and cached queries.
 
-### 5.5 Service Boundaries
-The backend now supports service-specific API slices behind the same Django codebase. This keeps the current application working while allowing separate deployable roles:
+### 5.5 Microservice Slicing Capability
+The FastAPI backend supports running as isolated API microservice slices via the `SERVICE_NAME` environment variable:
 
-| Service | Scope |
+| Service Name | Scope & Endpoints |
 | --- | --- |
-| Gateway | Full API for the frontend and default deployments |
-| Auth | OTP, login, registration, password reset, profile |
-| Applications | Submissions, review workflow, feedback, notifications |
-| Admin | Admin operations, notices, audit views |
-| Notifications | Notification listing and read-state updates |
-| Public | Health, homepage data, public notices, highlights |
+| `gateway` | Full API surface for default single-instance deployments |
+| `auth` | OTP requests, verification, login, password reset, profile endpoints |
+| `applications` | Student/faculty application submission, review pipeline, feedback |
+| `admin` | Admin dashboard operations, user provisioning, notice board management |
+| `notifications` | Notification listing and read-state updates |
+| `public` | Homepage health checks, public notices, and highlights |
 
-The service role is selected with `SERVICE_NAME`.
+---
 
-## 6. Core Modules
-### Frontend Modules
-- `App.jsx`: route control, auth protection, global header and footer
-- `LandingPage.jsx`: public home page, highlights, notices, workflow summary
-- `Login.jsx`: password login
-- `Register.jsx`: student/faculty registration with OTP
-- `ForgotPassword.jsx`: OTP-based password reset
-- `StudentDashboard.jsx`: student application and tracking
-- `FacultyDashboard.jsx`: faculty application and tracking
-- `AuthorityDashboard.jsx`: review and approval console
-- `AdminDashboard.jsx`: admin operations console
-- `components/layout/AppHeader.jsx`: responsive header and hamburger menu
-- `components/Sidebar.jsx`: dashboard navigation and user summary
-- `lib/applicationFormPdf.js`: printable form generation
+## 6. Core Codebase Structure
 
-### Backend Modules
-- `api/models.py`: database models
-- `api/serializers.py`: request and response validation
-- `api/workflow.py`: registration, submission, and review rules
-- `api/views.py`: endpoint handlers
-- `api/security.py`: password hashing, OTP, JWT, email validation
-- `api/storage.py`: upload validation and file saving
-- `api/notifications.py`: email notification dispatch
-- `api/routing.py`: dashboard path mapping
+### Frontend (`frontend/src/`)
+- `App.jsx`: Global router setup, authentication guards, header and footer wrappers
+- `pages/LandingPage.jsx`: Public portal homepage with highlights, workflow overview, and notices
+- `pages/Login.jsx`: User password login page
+- `pages/Register.jsx`: OTP-based student/faculty onboarding page
+- `pages/ForgotPassword.jsx`: OTP-based password reset page
+- `pages/StudentDashboard.jsx`: Student application submission & tracking console
+- `pages/FacultyDashboard.jsx`: Faculty application submission & tracking console
+- `pages/AuthorityDashboard.jsx`: Department and Institution review console
+- `pages/AdminDashboard.jsx`: System administration and auditing console
+- `components/layout/AppHeader.jsx`: Responsive navbar with user drawer controls
+- `components/Sidebar.jsx`: Dashboard navigation links and active session details
+- `lib/applicationFormPdf.js`: Printable jsPDF document builder
+
+### Backend (`backend/app/`)
+- `main.py`: FastAPI app initialization, CORS setup, RateLimitMiddleware, static file mounting, and lifespan management
+- `core/config.py`: Centralized environment configurations using Pydantic Settings
+- `core/database.py`: SQLAlchemy 2.0 engine, SessionLocal factory, and Base model class
+- `core/redis.py`: Async Redis connection manager with fallback
+- `core/security.py`: Password hashing (`bcrypt`), JWT token generation/decoding
+- `models/`: SQLAlchemy ORM models (`user.py`, `application.py`, `email_otp.py`, `notice.py`, `feedback.py`, `login_event.py`, `form_window.py`)
+- `schemas/`: Pydantic validation schemas (`auth.py`, `user.py`, `application.py`, `notice.py`, `feedback.py`, `admin.py`)
+- `routers/`: FastAPI endpoint controllers (`auth.py`, `profile.py`, `applications.py`, `notifications.py`, `feedback.py`, `notices.py`, `admin.py`, `health.py`)
+- `middleware/rate_limit.py`: Sliding-window rate-limiting middleware powered by Redis
+
+---
 
 ## 7. Database Model Summary
-### User
-Stores account details such as:
-- Name
-- Email
-- Password hash
-- Role
-- Department
-- Active/inactive state
 
-### Application
-Stores each incentive request:
-- Owner user
-- Application type: student or faculty
-- Workflow status
-- Approved amount
-- Full JSON payload of form data
-- Created time
+### User (`models/user.py`)
+Stores account credentials, assigned role, department, active status, and timestamps.
 
-### EmailOtp
-Stores OTP challenges for:
-- Registration
-- Password reset
+### Application (`models/application.py`)
+Stores claim applications including owner ID, application type (`student` or `faculty`), current status, approved amount, review remarks, JSON payload of submitted form data, and review timestamps.
 
-### PasswordResetRequest
-Stores password reset request metadata and token history.
+### EmailOtp (`models/email_otp.py`)
+Tracks active OTP challenges, expiration times, and verification state for registration and password reset.
 
-### Notification
-Stores notification records if used by the workflow or admin modules.
+### Notice (`models/notice.py`)
+Stores public notice titles, file attachment paths, creator ID, and posting dates.
 
-### Notice
-Stores public notice title, file path, creator, and timestamp.
+### FormWindow (`models/form_window.py`)
+Stores configuration for start and end dates controlling when reimbursement forms can be submitted.
 
-### FormWindow
-Stores the start and end dates for form submission availability.
+### Feedback (`models/feedback.py`)
+Stores user feedback messages submitted to system administrators.
 
-### Feedback
-Stores one feedback entry per user.
+### LoginEvent (`models/login_event.py`)
+Stores audit records of user logins, recording IP address, user agent, and timestamp.
 
-### LoginEvent
-Stores login audit information such as email, IP address, and user agent.
+---
 
-## 8. Public Site Workflow
-The public landing page acts as the entry point for the portal.
+## 8. Application Workflows
 
-### User Journey
-1. User opens the home page.
-2. The hero section introduces the portal.
-3. Public highlights explain the portal benefits.
-4. Notices are displayed from backend data.
-5. The user chooses Login or Create Account.
+### 8.1 Registration Workflow
+1. User enters name, email (`@sbjit.edu.in`), password, role, and department.
+2. Backend verifies email domain and rejects authority role self-registration.
+3. An OTP is dispatched to the user's email address.
+4. User submits the received OTP.
+5. Account is created, password is hashed with `bcrypt`, and a JWT access token is issued.
 
-### Public Content
-- Hero carousel
-- Service highlights
-- About points
-- Workflow summary
-- Notices board
+### 8.2 Login & Password Reset Workflow
+1. **Login**: User submits credentials. Backend verifies password hash, records a `LoginEvent`, and returns a JWT access token.
+2. **Forgot Password**: User submits registered email. Backend sends an OTP. Upon verification, the user provides a new password which updates the stored hash.
 
-## 9. Registration Workflow
-The registration flow uses OTP verification.
+### 8.3 Submission Workflow
+1. System checks that the active submission `FormWindow` is currently open.
+2. System verifies user has not exceeded 2 submissions in the last 6 months.
+3. Applicant uploads required supporting files (Fee receipt, Certificate, Bank Passbook for students, Photo, Signature).
+4. Files undergo size (max 150KB) and extension validation before saving to `backend/uploads`.
+5. Application is saved with initial status `pending_department_coordinator`.
 
-### Student and Faculty Registration
-1. User opens the registration page.
-2. User enters name, email, password, role, and department.
-3. Backend checks that the email belongs to `@sbjit.edu.in`.
-4. Backend rejects authority roles from self-registration.
-5. An OTP is sent to the entered email.
-6. User verifies the OTP.
-7. The account is created and a JWT token is issued.
-8. The user is redirected to the correct dashboard.
+### 8.4 Multi-Stage Approval Workflow
+Applications progress sequentially through approval stages:
+```
+pending_department_coordinator ──► pending_department_hod ──► pending_institution_coordinator ──► approved
+```
+- At any stage, a reviewer can reject the application by providing a mandatory remark, changing the status to `rejected`.
+- **Department Coordinator & HOD**: Scope-restricted to review applications matching their own department.
+- **Institution Coordinator**: Performs final review and enters the sanctioned reimbursement amount.
 
-### Admin Registration
-1. Admin registration is restricted to allowlisted email addresses.
-2. After verification, admin accounts can access the admin dashboard.
+---
 
-### Registration Constraints
-- Duplicate email addresses are blocked
-- OTP resend is rate-limited
-- OTP expires after a configured time
+## 9. PDF Generation & Printing
+Submitted applications can be exported as formal PDF forms directly from the browser using `jsPDF` and `jsPDF-AutoTable`.
 
-## 10. Login And Password Reset
-### Login Workflow
-1. User enters email and password.
-2. Backend validates the password hash.
-3. A JWT access token is generated.
-4. A login event is recorded with IP and user agent.
-5. The user is redirected to the dashboard based on role.
+### Key Elements of Printed Form
+- Header with institutional branding and title.
+- Complete applicant profile, academic details, and course information.
+- Student bank account details (Bank name, Account number, IFSC code).
+- Student/Faculty declaration text.
+- Embedded digital signature (if uploaded).
+- **Office Use Table**: Structured section with rows for Department Coordinator, Department HOD, and Institution Coordinator actions, remarks, and physical signature space.
 
-### Forgot Password Workflow
-1. User enters registered email.
-2. Backend sends a password reset OTP if the account exists.
-3. User verifies the OTP.
-4. User sets a new password.
-5. Password hash is updated.
+---
 
-## 11. Application Submission Workflow
-The submission workflow is the core of the system.
+## 10. Security & Data Protection
+- **JWT Authentication**: Secure statetoken authorization passed via `Authorization: Bearer <token>` headers.
+- **Password Security**: Password strings are hashed using `bcrypt` prior to storage.
+- **Domain Locking**: Account creation strictly constrained to institutional `@sbjit.edu.in` emails.
+- **Rate Limiting**: Sliding-window API rate limiting implemented via FastAPI middleware backed by Redis.
+- **File Validation**: Strict file type matching (PDF/JPG/PNG) and size constraints (150KB maximum per file).
 
-### Shared Rules
-- Form submission is allowed only when the form window is open
-- Students and faculty have different form structures
-- Each user can submit only two applications in six months
-- Files are validated before storage
-- Uploaded files are saved on the backend server
+---
 
-### Student Application Flow
-1. Student opens the application form.
-2. Student fills personal and academic details.
-3. Student adds course details and bank details.
-4. Student uploads:
-   - Fee receipt
-   - Certificate
-   - Bank passbook
-   - Photograph
-   - Optional signature
-5. Student accepts the declaration.
-6. Form is submitted.
-7. The application is stored with status `pending_department_coordinator`.
-8. The applicant receives a submission confirmation.
-9. The department coordinator receives a review alert.
+## 11. API Endpoint Overview
 
-### Faculty Application Flow
-1. Faculty opens the application form.
-2. Faculty fills personal and academic details.
-3. Faculty adds course details and designation.
-4. Faculty uploads:
-   - Fee receipt
-   - Certificate
-   - Photograph
-   - Optional signature
-5. Faculty accepts the declaration.
-6. Form is submitted.
-7. The application is stored with status `pending_department_coordinator`.
-8. The applicant receives a submission confirmation.
-9. The department coordinator receives a review alert.
+### Health
+- `GET /health` / `GET /api/health`: Database and Redis connection status
 
-## 12. Approval Workflow
-The review process is sequential and role-driven.
+### Authentication & Profile (`/api/auth`, `/api/profile`)
+- `POST /api/auth/request-otp`: Request registration OTP
+- `POST /api/auth/verify-otp`: Verify OTP and create account
+- `POST /api/auth/login`: Authenticate and issue JWT token
+- `POST /api/auth/forgot-password`: Request password reset OTP
+- `POST /api/auth/reset-password`: Reset password using OTP
+- `GET /api/profile/me`: Fetch logged-in user profile
+- `PUT /api/profile/me`: Update profile details
 
-### Status Flow
-`pending_department_coordinator -> pending_department_hod -> pending_institution_coordinator -> approved`
+### Applications (`/api/applications`)
+- `POST /api/applications/student`: Submit student claim
+- `POST /api/applications/faculty`: Submit faculty claim
+- `GET /api/applications/mine`: List applications for current user
+- `GET /api/applications/track/{id}`: Detailed tracking for a specific claim
+- `GET /api/applications/pending`: List pending applications for reviewer's stage
+- `POST /api/applications/{id}/review`: Submit approval or rejection review
 
-If a reviewer rejects the form, the status becomes `rejected`.
+### Admin & Operations (`/api/admin`, `/api/notices`, `/api/feedback`)
+- `GET /api/admin/users`: List all users with pagination and search
+- `POST /api/admin/create-authority`: Provision a new authority account
+- `GET /api/admin/applications`: List all system applications
+- `GET /api/admin/login-events`: Audit log of user logins
+- `PUT /api/admin/form-window`: Update submission window start and end dates
+- `POST /api/notices/`: Create a public notice
+- `GET /api/notices/public`: Fetch public notices list
+- `POST /api/feedback/`: Submit feedback to admin
 
-### Review Rules
-- Department Coordinator can review only applications from the same department
-- Department HOD can review only applications from the same department
-- Institution Coordinator performs the final approval
-- Rejection requires a remark
-- Final approval requires an approved amount
+---
 
-### Review Steps
-1. Department Coordinator checks the submitted documents and details.
-2. If approved, the application moves to HOD review.
-3. HOD checks the recommendation and departmental correctness.
-4. If approved, the application moves to Institution Coordinator review.
-5. Institution Coordinator either approves with amount or rejects with remark.
-6. Final status and review history are stored in the application record.
+## 12. Deployment & Execution Guide
 
-### Notification Behavior
-- Applicant receives email updates when the status changes
-- Reviewers receive email alerts when an application reaches their stage
+### Running Backend (FastAPI)
+```bash
+cd backend
+source venv/bin/activate  # or venv\Scripts\activate on Windows
+pip install -r requirements.txt
+python main.py
+```
 
-## 13. Admin Workflow
-The admin dashboard provides system-wide control.
-
-### Admin Functions
-- Create authority users
-- View and manage users
-- Review login events
-- Manage notices
-- Manage form window start and end dates
-- Manage application records
-- Delete specific users or applications
-- Remove all non-admin users when needed
-
-### Authority User Management
-Admins can create authority users for:
-- Department Coordinator
-- Department HOD
-- Institution Coordinator
-
-### Operational Control
-The admin dashboard is also useful for:
-- Auditing account activity
-- Monitoring feedback
-- Checking reset history
-- Maintaining system readiness
-
-## 14. PDF And Print Workflow
-The portal supports printable form generation for submitted applications.
-
-### PDF Behavior
-The PDF export uses submitted application data and renders a formal incentive form. It includes:
-- Applicant details
-- Course details
-- Financial details
-- Bank details for students
-- Declaration block
-- Applicant signature block
-- Office use table
-
-### Office Use Section
-The office use table is organized into four columns:
-- Role
-- Action
-- Remark
-- Sign
-
-The rows are prepared for:
-- Department Coordinator
-- Department HOD
-- Institution Coordinator
-
-### Print Design Notes
-- Uploaded document list is not printed in the final PDF
-- The printed version is meant for office processing and approval
-- Signature image is embedded if available
-- The layout is designed to fit A4 pages cleanly
-
-## 15. Responsive UI Behavior
-The interface is responsive across mobile, tablet, and desktop sizes.
-
-### Mobile Behavior
-- Dashboard header shows a hamburger menu in the app header
-- Sidebar opens as a mobile drawer
-- Forms stack into single-column layouts when needed
-- Buttons and cards resize for smaller screens
-
-### Desktop Behavior
-- Dashboard sidebar is fixed and visible
-- Content area adjusts beside the sidebar
-- Navigation is easier for long forms and tables
-
-### Public Layout
-- Public header shows brand identity and links
-- Mobile navigation collapses into a menu
-- Hero and content sections scale across screen sizes
-
-## 16. Security And Validation
-The portal includes several validation layers.
-
-### Authentication Security
-- JWT access tokens
-- Password hashing with bcrypt
-- OTP verification for registration and reset
-- Login audit logging
-
-### Data Validation
-- Email domain restriction
-- Role validation
-- Department validation
-- Course category validation
-- Academic year type validation
-- Required declaration acceptance
-
-### File Validation
-- PDF only for receipts, certificates, and bank passbook
-- JPG only for student photographs
-- JPG/PNG for signatures
-- File size limited to 150KB
-- Photograph is standardized after upload
-
-## 17. API Endpoint Summary
-The backend exposes the following major endpoint groups:
-
-### Authentication
-- `POST /api/auth/request-otp`
-- `POST /api/auth/verify-otp`
-- `POST /api/auth/login`
-- `POST /api/auth/forgot-password`
-- `POST /api/auth/reset-password`
-
-### Profile
-- `GET /api/profile/me`
-- `PUT /api/profile/me`
-- `DELETE /api/profile/me`
-
-### Applications
-- `POST /api/applications/student`
-- `POST /api/applications/faculty`
-- `GET /api/applications/mine`
-- `GET /api/applications/track/<id>`
-- `GET /api/applications/pending`
-- `GET /api/applications/all`
-- `POST /api/applications/<id>/review`
-
-### Admin And Support
-- `GET /api/admin/users`
-- `GET /api/admin/applications`
-- `GET /api/admin/login-events`
-- `GET /api/admin/feedback`
-- `GET /api/admin/password-resets`
-- `PUT /api/admin/form-window`
-- `POST /api/notices/`
-- `GET /api/notices/public`
-- `POST /api/feedback/`
-
-## 18. Deployment And Run Notes
-### Frontend
+### Running Frontend (React + Vite)
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-### Backend
-```bash
-cd backend
-pip install -r requirements.txt
-python manage.py migrate
-python manage.py runserver 0.0.0.0:8000
-```
+---
 
-### Production Considerations
-- Use environment variables for secrets and SMTP settings
-- Configure PostgreSQL for production
-- Store media uploads on persistent storage
-- Put the backend behind a reverse proxy
-- Use a process manager such as Gunicorn, PM2, or systemd depending on hosting setup
-
-## 19. Key Business Rules
-- Only `@sbjit.edu.in` users can register
-- Authority self-registration is disabled
-- Admin registration is allowlist-based
-- Student and faculty submissions are limited to two per six months
-- Form submission is controlled by the form window
-- Department reviewers can only process their own department applications
-- Final approval is only by the institution coordinator
-
-## 20. Conclusion
-SBJIT NPTEL Reimburse is a complete workflow-driven portal for managing academic incentive applications. It combines role-based dashboards, OTP-secured onboarding, structured form submission, approval routing, PDF export, and administrative controls into a single platform.
-
-The system is well suited for institutional processing because it keeps the workflow transparent, validates documents before storage, and preserves a clear record of submission and review activity.
+## 13. Conclusion
+The SBJIT NPTEL Reimbursement Portal delivers a modern, robust, and secure web application for managing academic incentive claims. Built on FastAPI, SQLAlchemy, PostgreSQL, Redis, and React, it provides institutional users with role-tailored dashboards, verified email OTP onboarding, multi-stage approval routing, client-side PDF export, and full audit transparency.

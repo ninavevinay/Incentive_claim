@@ -75,7 +75,7 @@ const filterPrintableRows = (rows) =>
 
 const ensurePageSpace = (doc, cursorY, requiredSpace, drawPageHeader) => {
   const pageHeight = doc.internal.pageSize.getHeight();
-  const bottomPadding = 42;
+  const bottomPadding = 20;
   if (cursorY + requiredSpace <= pageHeight - bottomPadding) {
     return cursorY;
   }
@@ -84,16 +84,16 @@ const ensurePageSpace = (doc, cursorY, requiredSpace, drawPageHeader) => {
 };
 
 const drawSectionTitle = (doc, title, cursorY, margin, pageWidth) => {
-  const barHeight = 18;
+  const barHeight = 16;
   doc.setFillColor(243, 244, 246);
   doc.setDrawColor(...BORDER_COLOR);
   doc.setLineWidth(0.8);
   doc.rect(margin, cursorY, pageWidth - (margin * 2), barHeight, "FD");
   doc.setTextColor(...HEADER_COLOR);
   doc.setFont("times", "bold");
-  doc.setFontSize(10.5);
-  doc.text(title, margin + 6, cursorY + 12);
-  return cursorY + barHeight + 3;
+  doc.setFontSize(10);
+  doc.text(title, margin + 6, cursorY + 11);
+  return cursorY + barHeight + 2;
 };
 
 const drawTwoColumnTable = (doc, autoTable, rows, cursorY, margin, pageWidth, options = {}) => {
@@ -107,8 +107,8 @@ const drawTwoColumnTable = (doc, autoTable, rows, cursorY, margin, pageWidth, op
     theme: "grid",
     styles: {
       font: "times",
-      fontSize: 9.2,
-      cellPadding: 4,
+      fontSize: 9,
+      cellPadding: 3.5,
       lineColor: BORDER_COLOR,
       lineWidth: 0.6,
       textColor: TEXT_COLOR,
@@ -121,7 +121,7 @@ const drawTwoColumnTable = (doc, autoTable, rows, cursorY, margin, pageWidth, op
       1: { cellWidth: Math.max(120, tableWidth - labelWidth) }
     }
   });
-  return (doc.lastAutoTable?.finalY || cursorY) + 8;
+  return (doc.lastAutoTable?.finalY || cursorY) + 5;
 };
 
 const drawApplicantPhotoBlock = (doc, photoImage, x, y, width, height) => {
@@ -129,16 +129,16 @@ const drawApplicantPhotoBlock = (doc, photoImage, x, y, width, height) => {
   doc.setLineWidth(0.8);
   doc.rect(x, y, width, height);
 
-  const headerHeight = 18;
+  const headerHeight = 16;
   doc.setFillColor(243, 244, 246);
   doc.rect(x, y, width, headerHeight, "F");
   doc.setTextColor(...HEADER_COLOR);
   doc.setFont("times", "bold");
-  doc.setFontSize(9);
-  doc.text("Applicant Photograph", x + (width / 2), y + 12, { align: "center" });
+  doc.setFontSize(8.5);
+  doc.text("Applicant Photograph", x + (width / 2), y + 11, { align: "center" });
 
   if (photoImage?.dataUrl) {
-    const padding = 6;
+    const padding = 5;
     const contentY = y + headerHeight + padding;
     const maxWidth = width - (padding * 2);
     const maxHeight = height - headerHeight - (padding * 2);
@@ -163,7 +163,7 @@ const drawApplicantPhotoBlock = (doc, photoImage, x, y, width, height) => {
     doc.setTextColor(100, 116, 139);
     doc.setFont("times", "normal");
     doc.setFontSize(8.5);
-    doc.text("Photo not available", x + (width / 2), y + (height / 2) + 6, { align: "center" });
+    doc.text("Photo not available", x + (width / 2), y + (height / 2) + 5, { align: "center" });
   }
 };
 
@@ -176,34 +176,34 @@ const drawDeclarationBlock = (doc, cursorY, margin, pageWidth, accepted) => {
 
   doc.setDrawColor(...BORDER_COLOR);
   doc.setLineWidth(0.8);
-  const boxHeight = 58;
+  const boxHeight = 50;
   doc.rect(margin, cursorY, pageWidth - (margin * 2), boxHeight);
 
   doc.setTextColor(...TEXT_COLOR);
   doc.setFont("times", "normal");
-  doc.setFontSize(9.2);
+  doc.setFontSize(9);
 
-  let lineY = cursorY + 14;
+  let lineY = cursorY + 13;
   declarationLines.forEach((line) => {
     doc.text(line, margin + 6, lineY);
-    lineY += 16;
+    lineY += 14;
   });
 
   doc.setFont("times", "bold");
-  doc.text(`Declaration Accepted: ${toBooleanText(accepted)}`, margin + 6, cursorY + boxHeight - 6);
+  doc.text(`Declaration Accepted: ${toBooleanText(accepted)}`, margin + 6, cursorY + boxHeight - 5);
 
-  return cursorY + boxHeight + 12;
+  return cursorY + boxHeight + 6;
 };
 
 const drawApplicantSignatureBlock = (doc, cursorY, margin, signatureImage) => {
-  const boxWidth = 220;
-  const boxHeight = 68;
+  const boxWidth = 200;
+  const boxHeight = 52;
   const boxX = margin;
   const boxY = cursorY + 2;
-  const padding = 6;
+  const padding = 5;
 
   doc.setDrawColor(...BORDER_COLOR);
-  doc.setLineWidth(0.9);
+  doc.setLineWidth(0.8);
   doc.rect(boxX, boxY, boxWidth, boxHeight);
 
   if (signatureImage?.dataUrl) {
@@ -227,16 +227,16 @@ const drawApplicantSignatureBlock = (doc, cursorY, margin, signatureImage) => {
     const drawY = boxY + padding + ((maxHeight - drawHeight) / 2);
     doc.addImage(signatureImage.dataUrl, signatureImage.format, drawX, drawY, drawWidth, drawHeight, undefined, "FAST");
   } else {
-    const lineY = boxY + boxHeight - 16;
+    const lineY = boxY + boxHeight - 12;
     doc.line(boxX + 10, lineY, boxX + boxWidth - 10, lineY);
   }
 
   doc.setTextColor(...TEXT_COLOR);
   doc.setFont("times", "normal");
   doc.setFontSize(9);
-  doc.text("Signature of Applicant", boxX, boxY + boxHeight + 14);
+  doc.text("Signature of Applicant", boxX, boxY + boxHeight + 12);
 
-  return boxY + boxHeight + 22;
+  return boxY + boxHeight + 16;
 };
 
 const buildApplicantRows = (app, data) => {
@@ -312,13 +312,13 @@ const drawOfficeUseTable = (doc, autoTable, rows, cursorY, margin) => {
     styles: {
       font: "times",
       fontSize: 8.8,
-      cellPadding: 4,
+      cellPadding: 3,
       lineColor: BORDER_COLOR,
       lineWidth: 0.6,
       textColor: TEXT_COLOR,
       overflow: "linebreak",
       valign: "middle",
-      minCellHeight: 28
+      minCellHeight: 22
     },
     headStyles: {
       fillColor: HEADER_COLOR,
@@ -334,7 +334,7 @@ const drawOfficeUseTable = (doc, autoTable, rows, cursorY, margin) => {
     }
   });
 
-  return (doc.lastAutoTable?.finalY || cursorY) + 10;
+  return (doc.lastAutoTable?.finalY || cursorY) + 6;
 };
 
 export const exportApplicationFormPdf = async (app) => {
@@ -366,14 +366,14 @@ export const exportApplicationFormPdf = async (app) => {
       title: "Reimbursement Form for Certification Course",
       headerImageDataUrl,
       titleAlign: "center",
-      topPadding: isFirstPage ? 28 : 18
+      topPadding: isFirstPage ? 20 : 14
     });
   };
 
   let cursorY = drawPageHeader();
   let sectionNumber = 1;
 
-  const drawSimpleSection = (title, rows, requiredSpace = 150) => {
+  const drawSimpleSection = (title, rows, requiredSpace = 90) => {
     if (!rows || rows.length === 0) return false;
     cursorY = ensurePageSpace(doc, cursorY, requiredSpace, drawPageHeader);
     cursorY = drawSectionTitle(doc, `${sectionNumber}. ${title}`, cursorY, margin, pageWidth);
@@ -386,12 +386,12 @@ export const exportApplicationFormPdf = async (app) => {
     const rows = buildApplicantRows(app, data);
     if (!rows || rows.length === 0) return false;
 
-    const photoWidth = photographImage?.dataUrl ? 104 : 0;
-    const photoHeight = photographImage?.dataUrl ? 136 : 0;
+    const photoWidth = photographImage?.dataUrl ? 100 : 0;
+    const photoHeight = photographImage?.dataUrl ? 130 : 0;
     const photoGap = photographImage?.dataUrl ? 12 : 0;
     const rightMargin = photographImage?.dataUrl ? margin + photoWidth + photoGap : margin;
 
-    cursorY = ensurePageSpace(doc, cursorY, 180, drawPageHeader);
+    cursorY = ensurePageSpace(doc, cursorY, 140, drawPageHeader);
     cursorY = drawSectionTitle(doc, `${sectionNumber}. Applicant's Details`, cursorY, margin, pageWidth);
 
     if (photographImage?.dataUrl) {
@@ -409,24 +409,24 @@ export const exportApplicationFormPdf = async (app) => {
   };
 
   drawApplicantSection();
-  drawSimpleSection("Course Details", buildCourseRows(data), 120);
-  drawSimpleSection("Financial Details", buildFinancialRows(app, data), 110);
+  drawSimpleSection("Course Details", buildCourseRows(data), 90);
+  drawSimpleSection("Financial Details", buildFinancialRows(app, data), 60);
 
   if (app?.application_type === "student") {
-    drawSimpleSection("Bank Details", buildBankRows(data), 110);
+    drawSimpleSection("Bank Details", buildBankRows(data), 65);
   }
 
-  cursorY = ensurePageSpace(doc, cursorY, 110, drawPageHeader);
+  cursorY = ensurePageSpace(doc, cursorY, 75, drawPageHeader);
   cursorY = drawSectionTitle(doc, `${sectionNumber}. Declaration`, cursorY, margin, pageWidth);
   cursorY = drawDeclarationBlock(doc, cursorY, margin, pageWidth, data?.declaration_accepted);
   sectionNumber += 1;
 
-  cursorY = ensurePageSpace(doc, cursorY, 110, drawPageHeader);
+  cursorY = ensurePageSpace(doc, cursorY, 95, drawPageHeader);
   cursorY = drawSectionTitle(doc, `${sectionNumber}. Applicant Signature`, cursorY, margin, pageWidth);
   cursorY = drawApplicantSignatureBlock(doc, cursorY, margin, signatureImage);
   sectionNumber += 1;
 
-  cursorY = ensurePageSpace(doc, cursorY, 130, drawPageHeader);
+  cursorY = ensurePageSpace(doc, cursorY, 120, drawPageHeader);
   cursorY = drawSectionTitle(doc, `${sectionNumber}. Office Use`, cursorY, margin, pageWidth);
   cursorY = drawOfficeUseTable(doc, autoTable, buildOfficeUseRows(), cursorY, margin);
 
