@@ -216,7 +216,8 @@ const toFeedbackRatingLabel = (value) => {
 
 const groupReportData = (items, getLabel, fallback = "Not Provided", maxSlices = 6) => {
   const counts = new Map();
-  items.forEach((item) => {
+  const safeItems = Array.isArray(items) ? items : [];
+  safeItems.forEach((item) => {
     const key = toReportLabel(getLabel(item), fallback);
     counts.set(key, (counts.get(key) || 0) + 1);
   });
@@ -229,16 +230,19 @@ const groupReportData = (items, getLabel, fallback = "Not Provided", maxSlices =
   return [...top, { label: "Others", count: others }];
 };
 
-const withChartColors = (items) =>
-  items.map((item, index) => ({
+const withChartColors = (items) => {
+  const safeItems = Array.isArray(items) ? items : [];
+  return safeItems.map((item, index) => ({
     ...item,
     color: REPORT_EXTRA_COLORS[index % REPORT_EXTRA_COLORS.length]
   }));
+};
 
 const buildPieSegments = (items, total, radius = 72) => {
   const circumference = 2 * Math.PI * radius;
   let offset = 0;
-  return items
+  const safeItems = Array.isArray(items) ? items : [];
+  return safeItems
     .filter((item) => item.count > 0)
     .map((item) => {
       const length = total > 0 ? (item.count / total) * circumference : 0;
@@ -372,9 +376,13 @@ export default function AuthorityDashboard() {
 
   const scopedDepartment = user?.role === "institution_coordinator" ? "" : (user?.department || "");
   const fetchPending = async () =>
-    api.pendingApplications({ department: scopedDepartment, limit: AUTHORITY_FETCH_LIMIT });
+    api.pendingApplications({ department: scopedDepartment, limit: AUTHORITY_FETCH_LIMIT })
+      .then((res) => (Array.isArray(res) ? res : []))
+      .catch(() => []);
   const fetchAll = async () =>
-    api.allApplications({ department: scopedDepartment, limit: AUTHORITY_FETCH_LIMIT });
+    api.allApplications({ department: scopedDepartment, limit: AUTHORITY_FETCH_LIMIT })
+      .then((res) => (Array.isArray(res) ? res : []))
+      .catch(() => []);
   const loadAuthorityUsers = async (search = "") => {
     if (user?.role !== "institution_coordinator") {
       setAuthorityUsers([]);
@@ -417,35 +425,41 @@ export default function AuthorityDashboard() {
     return reportRows;
   };
 
+  const setSafeApps = (val) => setApps(Array.isArray(val) ? val : []);
+  const setSafeAllApps = (val) => setAllApps(Array.isArray(val) ? val : []);
+  const setSafeMyApprovedApps = (val) => setMyApprovedApps(Array.isArray(val) ? val : []);
+  const setSafeFeedbackList = (val) => setFeedbackList(Array.isArray(val) ? val : []);
+  const setSafeNotices = (val) => setNotices(Array.isArray(val) ? val : []);
+
   useEffect(() => {
     if (!user) return;
     setLoading(true);
     Promise.all([
-      fetchPending().then(setApps).catch(() => setApps([])),
-      fetchAll().then(setAllApps).catch(() => setAllApps([])),
+      fetchPending().then(setSafeApps).catch(() => setApps([])),
+      fetchAll().then(setSafeAllApps).catch(() => setAllApps([])),
       loadMyApplications(),
       api.myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT })
-        .then(setMyApprovedApps)
+        .then(setSafeMyApprovedApps)
         .catch(() => setMyApprovedApps([])),
-      api.myFeedback({ limit: FEEDBACK_FETCH_LIMIT }).then(setFeedbackList).catch(() => setFeedbackList([])),
+      api.myFeedback({ limit: FEEDBACK_FETCH_LIMIT }).then(setSafeFeedbackList).catch(() => setFeedbackList([])),
       loadReportFeedback(),
-      api.publicNotices().then(setNotices).catch(() => setNotices([])),
+      api.publicNotices().then(setSafeNotices).catch(() => setNotices([])),
       user?.role === "institution_coordinator" ? loadAuthorityUsers() : Promise.resolve([]),
       user?.role === "institution_coordinator" ? loadFormWindowData() : Promise.resolve({ start_date: null, end_date: null })
     ]).finally(() => setLoading(false));
     const interval = setInterval(() => {
       if (document.visibilityState !== "visible") return;
-      fetchPending().then(setApps).catch(() => setApps([]));
-      fetchAll().then(setAllApps).catch(() => setAllApps([]));
+      fetchPending().then(setSafeApps).catch(() => setApps([]));
+      fetchAll().then(setSafeAllApps).catch(() => setAllApps([]));
       loadMyApplications();
-      api.publicNotices().then(setNotices).catch(() => setNotices([]));
+      api.publicNotices().then(setSafeNotices).catch(() => setNotices([]));
       if (active === "My Approved Applications") {
         api.myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT })
-          .then(setMyApprovedApps)
+          .then(setSafeMyApprovedApps)
           .catch(() => setMyApprovedApps([]));
       }
       if (active === "Feedback") {
-        api.myFeedback({ limit: FEEDBACK_FETCH_LIMIT }).then(setFeedbackList).catch(() => setFeedbackList([]));
+        api.myFeedback({ limit: FEEDBACK_FETCH_LIMIT }).then(setSafeFeedbackList).catch(() => setFeedbackList([]));
       }
       if (active === "Overview" || active === "Reports") {
         loadReportFeedback();
@@ -463,13 +477,13 @@ export default function AuthorityDashboard() {
   useEffect(() => {
     if (!user) return;
     const refreshOnFocus = () => {
-      fetchPending().then(setApps).catch(() => setApps([]));
-      fetchAll().then(setAllApps).catch(() => setAllApps([]));
+      fetchPending().then(setSafeApps).catch(() => setApps([]));
+      fetchAll().then(setSafeAllApps).catch(() => setAllApps([]));
       loadMyApplications();
-      api.publicNotices().then(setNotices).catch(() => setNotices([]));
+      api.publicNotices().then(setSafeNotices).catch(() => setNotices([]));
       if (active === "My Approved Applications") {
         api.myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT })
-          .then(setMyApprovedApps)
+          .then(setSafeMyApprovedApps)
           .catch(() => setMyApprovedApps([]));
       }
       if (active === "Overview" || active === "Reports") {
@@ -482,7 +496,7 @@ export default function AuthorityDashboard() {
         loadFormWindowData();
       }
       if (active === "Feedback") {
-        api.myFeedback({ limit: FEEDBACK_FETCH_LIMIT }).then(setFeedbackList).catch(() => setFeedbackList([]));
+        api.myFeedback({ limit: FEEDBACK_FETCH_LIMIT }).then(setSafeFeedbackList).catch(() => setFeedbackList([]));
       }
     };
     const handleVisibilityChange = () => {
@@ -514,10 +528,10 @@ export default function AuthorityDashboard() {
 
   const refresh = async () => {
     setLoading(true);
-    setApps(await fetchPending().catch(() => []));
-    setAllApps(await fetchAll().catch(() => []));
+    setSafeApps(await fetchPending().catch(() => []));
+    setSafeAllApps(await fetchAll().catch(() => []));
     await loadMyApplications();
-    setMyApprovedApps(
+    setSafeMyApprovedApps(
       await api.myReviewedApplications("approve", { limit: AUTHORITY_FETCH_LIMIT }).catch(() => [])
     );
     await loadReportFeedback();
@@ -525,7 +539,7 @@ export default function AuthorityDashboard() {
       await loadAuthorityUsers(authorityFilter.trim());
       await loadFormWindowData();
     }
-    setNotices(await api.publicNotices().catch(() => []));
+    setSafeNotices(await api.publicNotices().catch(() => []));
     setLoading(false);
   };
 
@@ -716,13 +730,22 @@ export default function AuthorityDashboard() {
   }, []);
 
   const normalize = (value) => (value || "").trim().toLowerCase();
+  const safeApps = Array.isArray(apps) ? apps : [];
+  const safeAllApps = Array.isArray(allApps) ? allApps : [];
+  const safeMyApprovedApps = Array.isArray(myApprovedApps) ? myApprovedApps : [];
+  const safeFeedbackList = Array.isArray(feedbackList) ? feedbackList : [];
+  const safeReportFeedbackList = Array.isArray(reportFeedbackList) ? reportFeedbackList : [];
+  const safeNotices = Array.isArray(notices) ? notices : [];
+  const safeAuthorityUsers = Array.isArray(authorityUsers) ? authorityUsers : [];
+  const safeMySubmittedApps = Array.isArray(mySubmittedApps) ? mySubmittedApps : [];
+
   const scopedAllApps = user?.role === "institution_coordinator"
-    ? allApps
-    : allApps.filter((app) => normalize(app.data?.department) === normalize(user?.department));
-  const filteredPendingApps = apps.filter((app) => matchesApplicationSearch(app, pendingSearch));
+    ? safeAllApps
+    : safeAllApps.filter((app) => normalize(app?.data?.department) === normalize(user?.department));
+  const filteredPendingApps = safeApps.filter((app) => matchesApplicationSearch(app, pendingSearch));
 
   const localApprovedByMeApps = scopedAllApps.filter((app) => {
-    const reviews = app.data?.reviews || [];
+    const reviews = app?.data?.reviews || [];
     const strictMatch = reviews.some(
       (review) =>
         review?.action === "approve" &&
@@ -756,7 +779,9 @@ export default function AuthorityDashboard() {
   const mergeById = (primary, fallback) => {
     const map = new Map();
     // Keep primary API records authoritative; fallback fills only missing IDs.
-    [...fallback, ...primary].forEach((app) => {
+    const safeFallback = Array.isArray(fallback) ? fallback : [];
+    const safePrimary = Array.isArray(primary) ? primary : [];
+    [...safeFallback, ...safePrimary].forEach((app) => {
       if (app && app.id !== undefined && app.id !== null) {
         map.set(app.id, app);
       }
@@ -764,7 +789,7 @@ export default function AuthorityDashboard() {
     return Array.from(map.values());
   };
 
-  const approvedByMeApps = mergeById(myApprovedApps, localApprovedByMeApps);
+  const approvedByMeApps = mergeById(safeMyApprovedApps, localApprovedByMeApps);
   const approvedByMeYearOptions = Array.from(
     new Set(approvedByMeApps.map((app) => formatAcademicYear(app?.data?.academic_year, "Not Provided")))
   ).sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: "base" }));
@@ -784,18 +809,18 @@ export default function AuthorityDashboard() {
     const departmentPass = reportApprovedDepartmentFilter === "all" || appDepartment === reportApprovedDepartmentFilter;
     return searchPass && yearPass && yearTypePass && departmentPass;
   });
-  const filteredMySubmittedApps = mySubmittedApps.filter((app) => matchesApplicationSearch(app, myApplicationsSearch));
+  const filteredMySubmittedApps = safeMySubmittedApps.filter((app) => matchesApplicationSearch(app, myApplicationsSearch));
   const filteredTotalApps = scopedAllApps.filter((app) => {
     const searchPass = matchesApplicationSearch(app, totalSearch);
     const statusPass = totalStatusFilter === "all" || String(app?.status || "").toLowerCase() === totalStatusFilter;
     return searchPass && statusPass;
   });
-  const filteredAuthorityUsers = authorityUsers.filter((u) => {
-    const value = `${u.name} ${u.email} ${u.department} ${AUTHORITY_ROLE_LABELS[u.role] || u.role}`.toLowerCase();
+  const filteredAuthorityUsers = safeAuthorityUsers.filter((u) => {
+    const value = `${u?.name || ""} ${u?.email || ""} ${u?.department || ""} ${AUTHORITY_ROLE_LABELS[u?.role] || u?.role || ""}`.toLowerCase();
     return value.includes(authorityFilter.trim().toLowerCase());
   });
-  const activeAuthorityUsersCount = authorityUsers.filter((u) => u?.is_active !== false).length;
-  const inactiveAuthorityUsersCount = authorityUsers.length - activeAuthorityUsersCount;
+  const activeAuthorityUsersCount = safeAuthorityUsers.filter((u) => u?.is_active !== false).length;
+  const inactiveAuthorityUsersCount = safeAuthorityUsers.length - activeAuthorityUsersCount;
   const pendingPageData = paginateRows(filteredPendingApps, pendingPage);
   const myApplicationsPageData = paginateRows(filteredMySubmittedApps, myApplicationsPage);
   const approvedPageData = paginateRows(filteredApprovedByMeApps, approvedPage);
@@ -804,31 +829,31 @@ export default function AuthorityDashboard() {
 
   useEffect(() => {
     setPendingPage((prev) =>
-      clampPage(prev, Math.ceil(Math.max(filteredPendingApps.length, 1) / AUTHORITY_UI_PAGE_SIZE))
+      clampPage(prev, Math.ceil(Math.max((filteredPendingApps || []).length, 1) / AUTHORITY_UI_PAGE_SIZE))
     );
-  }, [filteredPendingApps.length]);
+  }, [(filteredPendingApps || []).length]);
 
   useEffect(() => {
     setMyApplicationsPage((prev) =>
-      clampPage(prev, Math.ceil(Math.max(filteredMySubmittedApps.length, 1) / AUTHORITY_UI_PAGE_SIZE))
+      clampPage(prev, Math.ceil(Math.max((filteredMySubmittedApps || []).length, 1) / AUTHORITY_UI_PAGE_SIZE))
     );
-  }, [filteredMySubmittedApps.length]);
+  }, [(filteredMySubmittedApps || []).length]);
 
   useEffect(() => {
     setApprovedPage((prev) =>
-      clampPage(prev, Math.ceil(Math.max(filteredApprovedByMeApps.length, 1) / AUTHORITY_UI_PAGE_SIZE))
+      clampPage(prev, Math.ceil(Math.max((filteredApprovedByMeApps || []).length, 1) / AUTHORITY_UI_PAGE_SIZE))
     );
-  }, [filteredApprovedByMeApps.length]);
+  }, [(filteredApprovedByMeApps || []).length]);
 
   useEffect(() => {
-    setTotalPage((prev) => clampPage(prev, Math.ceil(Math.max(filteredTotalApps.length, 1) / AUTHORITY_UI_PAGE_SIZE)));
-  }, [filteredTotalApps.length]);
+    setTotalPage((prev) => clampPage(prev, Math.ceil(Math.max((filteredTotalApps || []).length, 1) / AUTHORITY_UI_PAGE_SIZE)));
+  }, [(filteredTotalApps || []).length]);
 
   useEffect(() => {
     setAuthorityUsersPage((prev) =>
-      clampPage(prev, Math.ceil(Math.max(filteredAuthorityUsers.length, 1) / AUTHORITY_UI_PAGE_SIZE))
+      clampPage(prev, Math.ceil(Math.max((filteredAuthorityUsers || []).length, 1) / AUTHORITY_UI_PAGE_SIZE))
     );
-  }, [filteredAuthorityUsers.length]);
+  }, [(filteredAuthorityUsers || []).length]);
 
   const rejectedAppsCount = scopedAllApps.filter((app) => app.status === "rejected").length;
   const reportBreakdown = REPORT_STATUS_META.map((statusMeta) => ({

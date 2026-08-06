@@ -113,12 +113,13 @@ export default function FacultyDashboard() {
 
   const refreshData = async () => {
     const appsData = await api.myApplications({ limit: DASHBOARD_FETCH_LIMIT }).catch(() => []);
-    setApps(withNotificationAmounts(appsData, []));
+    const normalizedApps = Array.isArray(appsData) ? appsData : [];
+    setApps(withNotificationAmounts(normalizedApps, []));
   };
 
   const loadFeedback = async () => {
     const mine = await api.myFeedback().catch(() => []);
-    setFeedbackList(mine);
+    setFeedbackList(Array.isArray(mine) ? mine : []);
   };
 
   useEffect(() => {

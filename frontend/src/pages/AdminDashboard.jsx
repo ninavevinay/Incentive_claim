@@ -123,33 +123,33 @@ export default function AdminDashboard() {
         ? "department_coordinator,department_hod,institution_coordinator"
         : undefined
     };
-    const usersData = await api.adminUsers(params);
-    setUsers(usersData);
+    const usersData = await api.adminUsers(params).catch(() => []);
+    setUsers(Array.isArray(usersData) ? usersData : []);
   };
 
   const loadApplicationsData = async (search = "") => {
     const appsData = await api.adminApplications({
       limit: ADMIN_FETCH_LIMIT,
       q: search || undefined
-    });
-    setApplications(appsData);
+    }).catch(() => []);
+    setApplications(Array.isArray(appsData) ? appsData : []);
   };
 
   const loadLoginEventsData = async () => {
-    const loginData = await api.adminLoginEvents({ limit: ADMIN_FETCH_LIMIT });
-    setLoginEvents(loginData);
+    const loginData = await api.adminLoginEvents({ limit: ADMIN_FETCH_LIMIT }).catch(() => []);
+    setLoginEvents(Array.isArray(loginData) ? loginData : []);
   };
 
   const loadFeedbackData = async (search = "") => {
     const feedbackData = await api.adminFeedback({
       limit: ADMIN_FETCH_LIMIT,
       q: search || undefined
-    });
-    setFeedbackEntries(feedbackData);
+    }).catch(() => []);
+    setFeedbackEntries(Array.isArray(feedbackData) ? feedbackData : []);
   };
 
   const loadFormWindowData = async () => {
-    const formWindowData = await api.adminFormWindow();
+    const formWindowData = await api.adminFormWindow().catch(() => ({}));
     setFormWindowForm({
       start_date: formWindowData?.start_date || "",
       end_date: formWindowData?.end_date || ""
@@ -158,16 +158,16 @@ export default function AdminDashboard() {
 
   const loadAdminData = async () => {
     const [usersData, appsData, loginData, feedbackData, formWindowData] = await Promise.all([
-      api.adminUsers({ limit: ADMIN_FETCH_LIMIT }),
-      api.adminApplications({ limit: ADMIN_FETCH_LIMIT }),
-      api.adminLoginEvents({ limit: ADMIN_FETCH_LIMIT }),
-      api.adminFeedback({ limit: ADMIN_FETCH_LIMIT }),
-      api.adminFormWindow()
+      api.adminUsers({ limit: ADMIN_FETCH_LIMIT }).catch(() => []),
+      api.adminApplications({ limit: ADMIN_FETCH_LIMIT }).catch(() => []),
+      api.adminLoginEvents({ limit: ADMIN_FETCH_LIMIT }).catch(() => []),
+      api.adminFeedback({ limit: ADMIN_FETCH_LIMIT }).catch(() => []),
+      api.adminFormWindow().catch(() => ({}))
     ]);
-    setUsers(usersData);
-    setApplications(appsData);
-    setLoginEvents(loginData);
-    setFeedbackEntries(feedbackData);
+    setUsers(Array.isArray(usersData) ? usersData : []);
+    setApplications(Array.isArray(appsData) ? appsData : []);
+    setLoginEvents(Array.isArray(loginData) ? loginData : []);
+    setFeedbackEntries(Array.isArray(feedbackData) ? feedbackData : []);
     setFormWindowForm({
       start_date: formWindowData?.start_date || "",
       end_date: formWindowData?.end_date || ""
@@ -275,27 +275,32 @@ export default function AdminDashboard() {
     return () => window.removeEventListener("portal:toggle-dashboard-menu", handleToggle);
   }, []);
 
-  const filteredUsers = users.filter((u) => {
-    const value = `${u.name} ${u.email} ${u.role} ${u.department}`.toLowerCase();
+  const safeUsers = Array.isArray(users) ? users : [];
+  const safeApplications = Array.isArray(applications) ? applications : [];
+  const safeLoginEvents = Array.isArray(loginEvents) ? loginEvents : [];
+  const safeFeedbackEntries = Array.isArray(feedbackEntries) ? feedbackEntries : [];
+
+  const filteredUsers = safeUsers.filter((u) => {
+    const value = `${u?.name || ""} ${u?.email || ""} ${u?.role || ""} ${u?.department || ""}`.toLowerCase();
     return value.includes(userFilter.trim().toLowerCase());
   });
-  const nonAdminUsers = users.filter((u) => u.role !== "admin");
-  const authorityUsers = users.filter((u) => Boolean(AUTHORITY_ROLE_LABELS[u.role]));
+  const nonAdminUsers = safeUsers.filter((u) => u?.role !== "admin");
+  const authorityUsers = safeUsers.filter((u) => Boolean(AUTHORITY_ROLE_LABELS[u?.role]));
   const filteredAuthorityUsers = authorityUsers.filter((u) => {
-    const value = `${u.name} ${u.email} ${u.department} ${AUTHORITY_ROLE_LABELS[u.role] || u.role}`.toLowerCase();
+    const value = `${u?.name || ""} ${u?.email || ""} ${u?.department || ""} ${AUTHORITY_ROLE_LABELS[u?.role] || u?.role || ""}`.toLowerCase();
     return value.includes(authorityFilter.trim().toLowerCase());
   });
   const activeAuthorityUsersCount = authorityUsers.filter((u) => u?.is_active !== false).length;
   const inactiveAuthorityUsersCount = authorityUsers.length - activeAuthorityUsersCount;
 
-  const filteredApplications = applications.filter((app) => {
+  const filteredApplications = safeApplications.filter((app) => {
     const value = [
-      app.id,
-      app.application_type,
-      app.status,
-      app.data?.applicant_name,
-      app.data?.application_name,
-      app.data?.department
+      app?.id,
+      app?.application_type,
+      app?.status,
+      app?.data?.applicant_name,
+      app?.data?.application_name,
+      app?.data?.department
     ]
       .filter(Boolean)
       .join(" ")
@@ -303,23 +308,23 @@ export default function AdminDashboard() {
     return value.includes(applicationFilter.trim().toLowerCase());
   });
 
-  const filteredFeedback = feedbackEntries.filter((entry) => {
-    const value = `${entry.name} ${entry.email} ${entry.role} ${entry.department} ${entry.benefit_status ?? ""} ${entry.message} ${entry.rating ?? ""}`.toLowerCase();
+  const filteredFeedback = safeFeedbackEntries.filter((entry) => {
+    const value = `${entry?.name || ""} ${entry?.email || ""} ${entry?.role || ""} ${entry?.department || ""} ${entry?.benefit_status ?? ""} ${entry?.message || ""} ${entry?.rating ?? ""}`.toLowerCase();
     return value.includes(feedbackFilter.trim().toLowerCase());
   });
 
-  const sortedApplications = [...filteredApplications].sort((a, b) => a.id - b.id);
+  const sortedApplications = [...filteredApplications].sort((a, b) => (a?.id || 0) - (b?.id || 0));
 
-  const approvedStudentRows = applications
+  const approvedStudentRows = safeApplications
     .filter(
       (app) =>
         String(app?.status || "").toLowerCase() === "approved" &&
         String(app?.application_type || "").toLowerCase() === "student"
     )
     .map((app) => {
-      const data = app.data || {};
+      const data = app?.data || {};
       return {
-        id: app.id,
+        id: app?.id,
         name: data.applicant_name || data.application_name || "-",
         academicYear: data.academic_year || "-",
         department: data.department || "-",
@@ -356,38 +361,38 @@ export default function AdminDashboard() {
 
   const usersPageData = paginateRows(filteredUsers, usersPage);
   const authorityPageData = paginateRows(filteredAuthorityUsers, authorityPage);
-  const loginEventsPageData = paginateRows(loginEvents, loginEventsPage);
+  const loginEventsPageData = paginateRows(safeLoginEvents, loginEventsPage);
   const feedbackPageData = paginateRows(filteredFeedback, feedbackPage);
   const applicationsPageData = paginateRows(sortedApplications, applicationsPage);
-  const selectedApplication = sortedApplications.find((app) => app.id === expandedAppId) || null;
+  const selectedApplication = sortedApplications.find((app) => app?.id === expandedAppId) || null;
 
   useEffect(() => {
-    setUsersPage((prev) => clampPage(prev, Math.ceil(Math.max(filteredUsers.length, 1) / ADMIN_UI_PAGE_SIZE)));
-  }, [filteredUsers.length]);
+    setUsersPage((prev) => clampPage(prev, Math.ceil(Math.max((filteredUsers || []).length, 1) / ADMIN_UI_PAGE_SIZE)));
+  }, [(filteredUsers || []).length]);
 
   useEffect(() => {
     setAuthorityPage((prev) =>
-      clampPage(prev, Math.ceil(Math.max(filteredAuthorityUsers.length, 1) / ADMIN_UI_PAGE_SIZE))
+      clampPage(prev, Math.ceil(Math.max((filteredAuthorityUsers || []).length, 1) / ADMIN_UI_PAGE_SIZE))
     );
-  }, [filteredAuthorityUsers.length]);
+  }, [(filteredAuthorityUsers || []).length]);
 
   useEffect(() => {
     setLoginEventsPage((prev) =>
-      clampPage(prev, Math.ceil(Math.max(loginEvents.length, 1) / ADMIN_UI_PAGE_SIZE))
+      clampPage(prev, Math.ceil(Math.max((safeLoginEvents || []).length, 1) / ADMIN_UI_PAGE_SIZE))
     );
-  }, [loginEvents.length]);
+  }, [(safeLoginEvents || []).length]);
 
   useEffect(() => {
     setFeedbackPage((prev) =>
-      clampPage(prev, Math.ceil(Math.max(filteredFeedback.length, 1) / ADMIN_UI_PAGE_SIZE))
+      clampPage(prev, Math.ceil(Math.max((filteredFeedback || []).length, 1) / ADMIN_UI_PAGE_SIZE))
     );
-  }, [filteredFeedback.length]);
+  }, [(filteredFeedback || []).length]);
 
   useEffect(() => {
     setApplicationsPage((prev) =>
-      clampPage(prev, Math.ceil(Math.max(sortedApplications.length, 1) / ADMIN_UI_PAGE_SIZE))
+      clampPage(prev, Math.ceil(Math.max((sortedApplications || []).length, 1) / ADMIN_UI_PAGE_SIZE))
     );
-  }, [sortedApplications.length]);
+  }, [(sortedApplications || []).length]);
 
   const submitAuthorityUser = async (e) => {
     e.preventDefault();

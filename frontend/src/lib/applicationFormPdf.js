@@ -71,7 +71,7 @@ const isPrintableValue = (value) => {
 };
 
 const filterPrintableRows = (rows) =>
-  rows.filter((row) => Array.isArray(row) && row.length >= 2 && isPrintableValue(row[1]));
+  (Array.isArray(rows) ? rows : []).filter((row) => Array.isArray(row) && row.length >= 2 && isPrintableValue(row[1]));
 
 const ensurePageSpace = (doc, cursorY, requiredSpace, drawPageHeader) => {
   const pageHeight = doc.internal.pageSize.getHeight();
