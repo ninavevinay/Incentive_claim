@@ -50,6 +50,7 @@ jobs:
             echo "===== Building Frontend Static Files ====="
             cd /var/www/Incentive_claim/frontend
             npm install --no-audit --no-fund
+            chmod -R +x node_modules/.bin || true
             npm run build
             sudo chmod -R 755 /var/www/Incentive_claim/frontend/dist || true
 
