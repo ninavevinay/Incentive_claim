@@ -197,13 +197,26 @@ def admin_create_authority_user(
 
 @router.get("/coordinator/authority-users", response_model=List[AdminUserOut])
 def coordinator_authority_users(
+    include_inactive: bool = Query(True),
+    limit: Optional[int] = Query(None),
+    q: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     if current_user.role not in {"institution_coordinator", "admin"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
-    users = db.query(User).filter(User.role.in_(["department_coordinator", "department_hod"])).all()
+    query = db.query(User).filter(User.role.in_(["department_coordinator", "department_hod"]))
+    if not include_inactive:
+        query = query.filter(User.is_active.is_(True))
+    if q:
+        search = f"%{q.strip().lower()}%"
+        query = query.filter(
+            User.name.ilike(search) | User.email.ilike(search) | User.department.ilike(search)
+        )
+    if limit:
+        query = query.limit(limit)
+    users = query.all()
     return [AdminUserOut.from_orm_model(u) for u in users]
 
 

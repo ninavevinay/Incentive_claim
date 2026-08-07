@@ -174,6 +174,18 @@ class AdminUserOut(BaseModel):
     department: str
     is_active: bool
 
+    @classmethod
+    def from_orm_model(cls, user: Any) -> AdminUserOut:
+        is_act = getattr(user, "is_active", True)
+        return cls(
+            id=user.id,
+            name=user.name or "",
+            email=user.email or "",
+            role=user.role or "",
+            department=getattr(user, "department", "") or "",
+            is_active=True if is_act is None else bool(is_act),
+        )
+
 
 class LoginEventOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -207,6 +219,18 @@ class PasswordResetOut(BaseModel):
     request_ip: str
     created_at: Optional[str] = None
     used_at: Optional[str] = None
+
+    @classmethod
+    def from_orm_model(cls, r: Any) -> PasswordResetOut:
+        return cls(
+            id=r.id,
+            user_id=r.user_id,
+            email=r.email,
+            token=r.token,
+            request_ip=r.request_ip,
+            created_at=portal_datetime_iso(r.created_at),
+            used_at=portal_datetime_iso(r.used_at) if getattr(r, "used_at", None) else None,
+        )
 
 
 class AdminCreateAuthorityUserSchema(BaseModel):

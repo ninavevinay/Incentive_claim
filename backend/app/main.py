@@ -87,10 +87,23 @@ app.include_router(notices.router)
 app.include_router(admin.router)
 
 
+from fastapi.exceptions import HTTPException, RequestValidationError
+from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
+
+import traceback
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True)
+    if isinstance(exc, HTTPException):
+        return await http_exception_handler(request, exc)
+    if isinstance(exc, RequestValidationError):
+        return await request_validation_exception_handler(request, exc)
+    tb_str = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    print(f"--- UNHANDLED EXCEPTION on {request.url.path} ---\n{tb_str}")
+    logger.error(f"Unhandled exception on {request.url.path}: {exc}\n{tb_str}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": "An internal server error occurred."},
+        content={"detail": str(exc) or "An internal server error occurred."},
     )
+
+
