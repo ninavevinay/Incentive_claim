@@ -40,6 +40,8 @@ async def lifespan(app: FastAPI):
     await close_redis()
 
 
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+
 app = FastAPI(
     title="SBJIT NPTEL Incentive Portal API",
     description="Scalable FastAPI Backend with Redis Caching, Rate Limiting & JWT Management",
@@ -47,7 +49,26 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
+    openapi_url="/openapi.json",
 )
+
+@app.get("/api/docs", include_in_schema=False)
+async def get_api_docs():
+    return get_swagger_ui_html(
+        openapi_url="/api/openapi.json",
+        title=app.title + " - Swagger UI",
+    )
+
+@app.get("/api/redoc", include_in_schema=False)
+async def get_api_redoc():
+    return get_redoc_html(
+        openapi_url="/api/openapi.json",
+        title=app.title + " - ReDoc",
+    )
+
+@app.get("/api/openapi.json", include_in_schema=False)
+async def get_api_openapi():
+    return JSONResponse(app.openapi())
 
 # CORS
 app.add_middleware(
@@ -85,6 +106,7 @@ app.include_router(notifications.router)
 app.include_router(feedback.router)
 app.include_router(notices.router)
 app.include_router(admin.router)
+
 
 
 from fastapi.exceptions import HTTPException, RequestValidationError

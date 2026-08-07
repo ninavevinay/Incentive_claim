@@ -54,6 +54,9 @@ jobs:
             npm run build
             sudo chmod -R 755 /var/www/Incentive_claim/frontend/dist || true
 
+            echo "===== Configuring Nginx Site ====="
+            printf 'server {\n    listen 80 default_server;\n    listen [::]:80 default_server;\n    server_name _;\n    root /var/www/Incentive_claim/frontend/dist;\n    index index.html;\n    client_max_body_size 50M;\n\n    location / {\n        try_files $uri $uri/ /index.html;\n    }\n\n    location /api/ {\n        proxy_pass http://127.0.0.1:8000/api/;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection "upgrade";\n        proxy_set_header Host $host;\n        proxy_cache_bypass $http_upgrade;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n    }\n\n    location ~ ^/(docs|redoc|openapi.json) {\n        proxy_pass http://127.0.0.1:8000;\n        proxy_http_version 1.1;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n    }\n\n    location /uploads/ {\n        proxy_pass http://127.0.0.1:8000/uploads/;\n    }\n}\n' | sudo tee /etc/nginx/sites-available/default > /dev/null
+
             echo "===== Reloading Nginx ====="
             sudo nginx -t
             sudo systemctl reload nginx || sudo systemctl restart nginx
