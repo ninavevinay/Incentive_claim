@@ -47,10 +47,22 @@ jobs:
             sudo systemctl restart fastapi || true
             sudo chmod -R 755 /var/www/Incentive_claim/backend/uploads || true
 
+            echo "===== Configuring Swap Memory ====="
+            if ! swapon --show | grep -q '/swapfile'; then
+              if [ ! -f /swapfile ]; then
+                sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+                sudo chmod 600 /swapfile
+                sudo mkswap /swapfile
+                echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab || true
+              fi
+              sudo swapon /swapfile || true
+            fi
+
             echo "===== Building Frontend Static Files ====="
             cd /var/www/Incentive_claim/frontend
             npm install --no-audit --no-fund
             chmod -R +x node_modules/.bin || true
+            export NODE_OPTIONS="--max-old-space-size=1536"
             npm run build
             sudo chmod -R 755 /var/www/Incentive_claim/frontend/dist || true
 
