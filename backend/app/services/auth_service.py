@@ -17,7 +17,7 @@ from app.core.security import (
     normalize_email,
     verify_password,
 )
-from app.models.models import EmailOtp, LoginEvent, PasswordResetRequest, User, portal_now
+from app.models.models import EmailOtp, LoginEvent, PasswordResetRequest, User, is_expired, portal_now
 from app.schemas.schemas import RequestOtpSchema, VerifyOtpSchema
 from app.services.notification_service import send_email_sync
 
@@ -44,9 +44,11 @@ def get_user_agent(request) -> str:
 async def request_registration_otp_service(db: Session, payload: RequestOtpSchema, request) -> dict:
     email = normalize_email(payload.email)
     if not is_allowed_email(email):
+        domain = str(settings.ALLOWED_EMAIL_DOMAIN or "").strip()
+        detail_msg = f"Registration is allowed only for @{domain} emails" if domain and domain != "*" else "Please provide a valid email address"
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Registration is allowed only for @{settings.ALLOWED_EMAIL_DOMAIN} emails",
+            detail=detail_msg,
         )
 
     if await RedisManager.has_otp_cooldown(email, "register"):
@@ -156,7 +158,7 @@ async def verify_registration_otp_service(db: Session, payload: VerifyOtpSchema,
         )
 
     now = portal_now()
-    if otp_record.expires_at < now:
+    if is_expired(otp_record.expires_at, now):
         otp_record.used_at = now
         db.commit()
         raise HTTPException(

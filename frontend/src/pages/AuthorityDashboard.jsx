@@ -293,6 +293,8 @@ export default function AuthorityDashboard() {
   const [formWindowForm, setFormWindowForm] = useState({ start_date: "", end_date: "" });
   const [formWindowMessage, setFormWindowMessage] = useState("");
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState("success");
+  const [reviewingIds, setReviewingIds] = useState({});
   const [editingDepartment, setEditingDepartment] = useState(false);
   const [departmentDraft, setDepartmentDraft] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -1083,7 +1085,9 @@ export default function AuthorityDashboard() {
   const lastYearSegments = buildPieSegments(lastYearStatusData, lastYearTotal);
 
   const review = async (id, action) => {
+    if (reviewingIds[id]) return;
     setMessage("");
+    setReviewingIds((prev) => ({ ...prev, [id]: true }));
     try {
       const remark = action === "reject" ? (rejectRemarks[id] || "").trim() : null;
       const approvedAmountRaw = approveAmounts[id];
@@ -1091,11 +1095,13 @@ export default function AuthorityDashboard() {
         ? Number(approvedAmountRaw)
         : null;
       if (action === "reject" && !remark) {
+        setMessageType("error");
         setMessage("Rejection remark is required.");
         return;
       }
       if (action === "approve" && user?.role === "institution_coordinator") {
         if (approvedAmount === null || Number.isNaN(approvedAmount) || approvedAmount < 0) {
+          setMessageType("error");
           setMessage("Approved amount is required for institution coordinator.");
           return;
         }
@@ -1103,10 +1109,15 @@ export default function AuthorityDashboard() {
       await api.reviewApplication(id, action, remark, approvedAmount);
       setRejectRemarks((prev) => ({ ...prev, [id]: "" }));
       setApproveAmounts((prev) => ({ ...prev, [id]: "" }));
-      setMessage(`Application ${action}d.`);
+      setMessageType("success");
+      setMessage(`Application ID #${id} ${action}d successfully.`);
+      setApps((prev) => prev.filter((a) => a.id !== id));
       await refresh();
     } catch (err) {
-      setMessage(err.message);
+      setMessageType("error");
+      setMessage(err.message || "Failed to review application.");
+    } finally {
+      setReviewingIds((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -2544,17 +2555,63 @@ export default function AuthorityDashboard() {
                         }}
                       />
                     </div>
-                    {message && <div className="mt-3 rounded-xl px-4 py-2 text-sm font-medium" style={{ background: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.2)" }}>{message}</div>}
+                    {message && (
+                      <div
+                        className="mt-3 rounded-xl px-4 py-2.5 text-sm font-medium animate-slide-up"
+                        style={
+                          messageType === "error"
+                            ? { background: "rgba(239, 68, 68, 0.1)", color: "#ef4444", border: "1px solid rgba(239, 68, 68, 0.2)" }
+                            : { background: "rgba(16, 185, 129, 0.1)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.2)" }
+                        }
+                      >
+                        {message}
+                      </div>
+                    )}
                     <div className="mt-4 grid gap-5">
-                      {pendingPageData.rows.map((app) => (
-                        <div key={app.id} className="form-section animate-slide-up">
-                          <div className="flex items-center justify-between">
-                            <div className="font-bold text-base" style={{ color: "var(--text-primary)" }}>{app.data.applicant_name || app.data.application_name || `Application #${app.id}`}</div>
-                            <span className="badge">{app.status}</span>
-                          </div>
-                          <div className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
-                            {app.application_type ? `ID: ${app.id} | Type: ${app.application_type}` : `ID: ${app.id}`}
-                          </div>
+                      {pendingPageData.rows.map((app) => {
+                        const applicantOtherApps = scopedAllApps.filter((other) => {
+                          if (other.id === app.id) return false;
+                          const sameEmail = app.data?.email && other.data?.email && normalize(other.data.email) === normalize(app.data.email);
+                          const sameUsn = app.data?.usn && other.data?.usn && normalize(other.data.usn) === normalize(app.data.usn);
+                          const sameName = app.data?.applicant_name && other.data?.applicant_name && normalize(other.data.applicant_name) === normalize(app.data.applicant_name);
+                          return sameEmail || sameUsn || sameName;
+                        });
+                        const approvedOtherApps = applicantOtherApps.filter((a) => String(a.status).toLowerCase() === "approved");
+                        const sameSemOtherApps = applicantOtherApps.filter((a) => normalize(a.data?.semester) === normalize(app.data?.semester));
+
+                        return (
+                          <div key={app.id} className="form-section animate-slide-up">
+                            <div className="flex items-center justify-between">
+                              <div className="font-bold text-base" style={{ color: "var(--text-primary)" }}>{app.data.applicant_name || app.data.application_name || `Application #${app.id}`}</div>
+                              <span className="badge">{app.status}</span>
+                            </div>
+                            <div className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                              {app.application_type ? `ID: ${app.id} | Type: ${app.application_type}` : `ID: ${app.id}`}
+                            </div>
+                            {applicantOtherApps.length > 0 && (
+                              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                                {approvedOtherApps.length > 0 && (
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors shadow-xs"
+                                    onClick={() => setSelectedApplication(app)}
+                                    title="Click to view full application tracking records"
+                                  >
+                                    <span>✓</span> {approvedOtherApps.length} Approved Application{approvedOtherApps.length > 1 ? "s" : ""} on Record (Click Track)
+                                  </button>
+                                )}
+                                {sameSemOtherApps.length > 0 && (
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors shadow-xs"
+                                    onClick={() => setSelectedApplication(app)}
+                                    title="Click to compare applications in this semester"
+                                  >
+                                    <span>ℹ</span> {sameSemOtherApps.length + 1} Total Applications for Sem {app.data?.semester || "-"}
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           <div className="mt-4 grid gap-3 text-sm md:grid-cols-3" style={{ color: "var(--text-secondary)" }}>
                             {[
                               ["Applicant", app.data.applicant_name || app.data.application_name || ""],
@@ -2641,11 +2698,26 @@ export default function AuthorityDashboard() {
                             <button className="btn btn-ghost" type="button" onClick={() => setSelectedApplication(app)}>
                               Track
                             </button>
-                            <button className="btn btn-primary" type="button" onClick={() => review(app.id, "approve")}>Approve</button>
-                            <button className="btn btn-ghost" type="button" onClick={() => review(app.id, "reject")}>Reject</button>
+                            <button
+                              className="btn btn-primary"
+                              type="button"
+                              disabled={reviewingIds[app.id]}
+                              onClick={() => review(app.id, "approve")}
+                            >
+                              {reviewingIds[app.id] ? "Approving..." : "Approve"}
+                            </button>
+                            <button
+                              className="btn btn-ghost"
+                              type="button"
+                              disabled={reviewingIds[app.id]}
+                              onClick={() => review(app.id, "reject")}
+                            >
+                              {reviewingIds[app.id] ? "Rejecting..." : "Reject"}
+                            </button>
                           </div>
                         </div>
-                      ))}
+                      );
+                    })}
                       {filteredPendingApps.length === 0 && (
                         <div className="form-section text-center py-8">
                           <div className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>

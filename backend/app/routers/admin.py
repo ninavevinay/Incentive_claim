@@ -8,9 +8,12 @@ from app.core.database import get_db
 from app.core.security import hash_password, is_allowed_email, normalize_email
 from app.models.models import (
     Application,
+    EmailOtp,
     Feedback,
     FormWindow,
     LoginEvent,
+    Notice,
+    Notification,
     PasswordResetRequest,
     User,
     portal_now,
@@ -240,8 +243,32 @@ def coordinator_set_authority_user_status(
     return AdminUserOut.from_orm_model(user)
 
 
+def safe_delete_user(db: Session, user: User) -> None:
+    files_to_delete = []
+    apps = db.query(Application).filter(Application.owner_id == user.id).all()
+    for app in apps:
+        data = app.data or {}
+        if isinstance(data, dict):
+            for field in ("fee_receipt_file", "certificate_file", "bank_passbook_file", "photograph_file", "signature_file"):
+                val = data.get(field)
+                if isinstance(val, str) and val.startswith("/uploads/"):
+                    files_to_delete.append(val)
+
+    db.query(PasswordResetRequest).filter(PasswordResetRequest.user_id == user.id).delete(synchronize_session=False)
+    db.query(EmailOtp).filter(EmailOtp.user_id == user.id).delete(synchronize_session=False)
+    db.query(Notification).filter(Notification.user_id == user.id).delete(synchronize_session=False)
+    db.query(Notice).filter(Notice.created_by == user.id).delete(synchronize_session=False)
+    db.query(LoginEvent).filter(LoginEvent.user_id == user.id).delete(synchronize_session=False)
+    db.query(Feedback).filter(Feedback.user_id == user.id).delete(synchronize_session=False)
+    db.query(Application).filter(Application.owner_id == user.id).delete(synchronize_session=False)
+
+    db.delete(user)
+    if files_to_delete:
+        delete_local_uploads(files_to_delete)
+
+
 @router.delete("/coordinator/authority-users/{user_id}", response_model=MessageResponse)
-def coordinator_delete_authority_user(
+async def coordinator_delete_authority_user(
     user_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -253,25 +280,27 @@ def coordinator_delete_authority_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    db.delete(user)
+    safe_delete_user(db, user)
     db.commit()
+    await CacheService.invalidate_highlights()
     return {"message": f"Authority user {user_id} deleted."}
 
 
 @router.delete("/users/non-admin", response_model=MessageResponse)
-def admin_delete_all_non_admin_users(
+async def admin_delete_all_non_admin_users(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_active_admin),
 ):
     users = db.query(User).filter(User.role != "admin").all()
     for u in users:
-        db.delete(u)
+        safe_delete_user(db, u)
     db.commit()
+    await CacheService.invalidate_highlights()
     return {"message": "All non-admin users deleted."}
 
 
 @router.delete("/users/{user_id}", response_model=MessageResponse)
-def admin_delete_user(
+async def admin_delete_user(
     user_id: int,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_active_admin),
@@ -283,6 +312,7 @@ def admin_delete_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    db.delete(user)
+    safe_delete_user(db, user)
     db.commit()
+    await CacheService.invalidate_highlights()
     return {"message": f"User {user_id} deleted."}

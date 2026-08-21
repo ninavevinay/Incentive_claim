@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import hash_password, is_allowed_email, normalize_email
-from app.models.models import EmailOtp, PasswordResetRequest, User, portal_now
+from app.models.models import EmailOtp, PasswordResetRequest, User, is_expired, portal_now
 from app.schemas.schemas import (
     ForgotPasswordSchema,
     LoginSchema,
@@ -125,7 +125,7 @@ def reset_password(payload: ResetPasswordSchema, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP not found or expired.")
 
     now = portal_now()
-    if otp_record.expires_at < now:
+    if is_expired(otp_record.expires_at, now):
         otp_record.used_at = now
         db.commit()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP expired.")

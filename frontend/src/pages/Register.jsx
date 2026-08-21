@@ -84,7 +84,7 @@ export default function Register() {
       wide
       eyebrow="New Account"
       title="Create your portal account"
-      subtitle="Register with your college email, set a password, and verify via OTP."
+      subtitle="Register with your email, set a password, and verify via OTP."
     >
       <form className="space-y-4" onSubmit={otpRequested ? verifyOtp : requestOtp}>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -102,13 +102,13 @@ export default function Register() {
           </div>
           <div>
             <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
-              College Email
+              Institutional Email (@sbjit.edu.in)
             </label>
             <input
               className="input"
               type="email"
               required
-              placeholder="you@sbjit.edu.in"
+              placeholder="name.dept23@sbjit.edu.in"
               value={form.email}
               onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
             />

@@ -25,6 +25,17 @@ def portal_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def is_expired(expires_at: Optional[datetime], current_time: Optional[datetime] = None) -> bool:
+    if not expires_at:
+        return True
+    now = current_time or portal_now()
+    if expires_at.tzinfo is None and now.tzinfo is not None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    elif expires_at.tzinfo is not None and now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return expires_at < now
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -44,6 +55,8 @@ class User(Base):
     notices = relationship("Notice", back_populates="creator", cascade="all, delete-orphan")
     login_events = relationship("LoginEvent", back_populates="user", cascade="all, delete-orphan")
     feedback = relationship("Feedback", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    password_reset_requests = relationship("PasswordResetRequest", back_populates="user", cascade="all, delete-orphan")
+    email_otps = relationship("EmailOtp", back_populates="user", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_users_role_dept", "role", "department"),
@@ -133,6 +146,8 @@ class EmailOtp(Base):
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
 
+    user = relationship("User", back_populates="email_otps")
+
     __table_args__ = (
         Index("ix_otp_email", "email"),
         Index("ix_otp_email_purpose_crt", "email", "purpose", created_at.desc()),
@@ -149,6 +164,8 @@ class PasswordResetRequest(Base):
     request_ip = Column(String(64), nullable=False)
     created_at = Column(DateTime, default=portal_now, nullable=False)
     used_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="password_reset_requests")
 
     __table_args__ = (
         Index("ix_pr_email", "email"),

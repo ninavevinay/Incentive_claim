@@ -5,8 +5,10 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.models import User
+from app.routers.admin import safe_delete_user
 from app.routers.deps import get_current_user
 from app.schemas.schemas import MessageResponse, UserOut, UserUpdateSchema
+from app.services.cache_service import CacheService
 
 router = APIRouter(prefix="/profile", tags=["Profile"])
 
@@ -33,7 +35,7 @@ def update_my_profile(
 
 
 @router.delete("/me", response_model=MessageResponse)
-def delete_my_profile(
+async def delete_my_profile(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -43,6 +45,8 @@ def delete_my_profile(
             detail="Admin account deletion is restricted",
         )
 
-    db.delete(current_user)
+    safe_delete_user(db, current_user)
     db.commit()
+    await CacheService.invalidate_highlights()
     return {"message": "Account deleted successfully."}
+

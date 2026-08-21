@@ -860,6 +860,9 @@ export default function StudentDashboard() {
                         ))}
                     </div>
                     <div className="mt-4 flex flex-wrap justify-end gap-2">
+                      <button className="btn btn-ghost" type="button" onClick={() => setSelectedApplication(app)}>
+                        Track
+                      </button>
                       <button className="btn btn-ghost" type="button" onClick={() => printApplicationForm(app)}>
                         Print Form PDF
                       </button>

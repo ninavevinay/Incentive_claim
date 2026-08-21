@@ -21,7 +21,9 @@ from app.models.models import (
     User,
     portal_now,
 )
-from app.services.notification_service import dispatch_portal_notification
+from app.services.notification_service import (
+    dispatch_portal_notification,
+)
 from app.services.storage_service import (
     PHOTO_UPLOAD_CONTENT_TYPES,
     PHOTO_UPLOAD_EXTENSIONS,
@@ -155,16 +157,49 @@ def enforce_form_window_open(db: Session) -> None:
 def reviewers_for_stage(db: Session, role: str, department: Optional[str]) -> List[User]:
     query = db.query(User).filter(User.role == role, User.is_active == True)
     if role in {"department_coordinator", "department_hod"}:
-        query = query.filter(func.lower(User.department) == func.lower(department or ""))
+        dept_norm = str(department or "").strip().lower()
+        if dept_norm:
+            # 1. Exact department match
+            exact_matches = query.filter(func.lower(User.department) == dept_norm).order_by(User.id).all()
+            if exact_matches:
+                return exact_matches
+            
+            # 2. Cluster fallback for shared departments
+            cluster_map = {
+                "aiml": ["cse", "it", "aids", "first year"],
+                "aids": ["cse", "it", "aiml", "first year"],
+                "it": ["cse", "aiml", "aids", "first year"],
+                "etc": ["ee", "first year"],
+                "ee": ["etc", "first year"],
+                "me": ["first year"],
+                "first year": ["cse", "aiml", "it", "etc", "ee", "me"],
+            }
+            for fallback_dept in cluster_map.get(dept_norm, []):
+                fallback_users = query.filter(func.lower(User.department) == fallback_dept).order_by(User.id).all()
+                if fallback_users:
+                    return fallback_users
+
+        # 3. If no department-specific reviewer exists, fallback to all active reviewers for this role
+        all_active = query.order_by(User.id).all()
+        if all_active:
+            return all_active
+
     return query.order_by(User.id).all()
 
 
 def queue_review_alerts(db: Session, reviewers: List[User], app: Application) -> None:
+    data = app.data or {}
+    applicant_name = data.get("applicant_name") or data.get("application_name") or "Applicant"
+    department = data.get("department") or (app.owner.department if app.owner else "Department")
+
+    # In-portal notification only (no individual emails per application)
     for reviewer in reviewers:
         dispatch_portal_notification(
             db,
             user_id=reviewer.id,
-            message=f"Application ID {app.id} awaits your review",
+            message=f"Application ID #{app.id} ({applicant_name} - {department}) awaits your review",
+            email_subject=None,
+            email_text=None,
         )
 
 
@@ -510,6 +545,7 @@ def review_application_submission_service(
     db.refresh(app)
 
     return app
+
 
 
 def public_approved_highlights_service(db: Session, limit: int = 50) -> List[dict]:

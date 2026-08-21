@@ -53,7 +53,13 @@ def normalize_email(email: str | None) -> str:
 
 
 def is_allowed_email(email: str | None) -> bool:
-    return normalize_email(email).endswith(f"@{settings.ALLOWED_EMAIL_DOMAIN}")
+    norm = normalize_email(email)
+    if not norm or "@" not in norm or "." not in norm.split("@")[-1]:
+        return False
+    domain = str(settings.ALLOWED_EMAIL_DOMAIN or "").strip()
+    if not domain or domain == "*":
+        return True
+    return norm.endswith(f"@{domain}")
 
 
 def make_auth_placeholder(subject: str) -> str:
